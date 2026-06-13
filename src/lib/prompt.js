@@ -69,7 +69,7 @@ OUTPUT: respond with ONLY a JSON object, no prose around it, matching exactly:
   "counter": {
     "found": <true|false>,
     "perspective": "<the counter-perspective in 4–6 sentences. Be specific: name figures, ratios, institutions, comparable cases, historical precedents, or named expert positions. Do not use vague category language. Empty string if found=false>",
-    "reasoning": "<3–5 sentences explaining the specific mechanism behind the counter: which data points, which analytical framework, which comparable cases, and why they lead a credible expert to the opposite conclusion. This must add new specifics beyond the perspective — not restate it. Empty string if found=false>",
+    "reasoning": "<2–3 short paragraphs separated by \\n\\n. Each paragraph must cover a DISTINCT angle not already stated in the perspective: e.g. (1) the specific data point or mechanism that makes the counter credible, (2) a comparable historical case or industry precedent, (3) what conditions would need to hold for the original thesis to be correct despite the counter. Do NOT restate or summarise the perspective — every sentence must add new information. Empty string if found=false>",
     "sources": ["<real source OR described evidence type — be specific enough to find by search>", "..."]
   }
 }`;

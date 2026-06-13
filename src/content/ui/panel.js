@@ -156,7 +156,9 @@ function renderResultHtml(data) {
   const reasoningHtml = counter.reasoning
     ? `<div class="ec-reasoning-block">
          <p class="ec-reasoning-label">Why experts hold this</p>
-         <p class="ec-reasoning">${escapeHtml(counter.reasoning)}</p>
+         ${counter.reasoning.split(/\n\n+/).filter(Boolean).map(
+           (p) => `<p class="ec-reasoning">${escapeHtml(p.trim())}</p>`
+         ).join("")}
        </div>`
     : "";
 
@@ -373,12 +375,13 @@ const TEMPLATE = `
       color: var(--ec-muted);
     }
     .ec-reasoning {
-      margin: 0;
+      margin: 0 0 8px;
       font-size: 12.5px;
       font-weight: 400;
       line-height: 1.65;
       color: var(--ec-muted);
     }
+    .ec-reasoning:last-child { margin-bottom: 0; }
 
     /* ── Sources (collapsible) ── */
     .ec-sources {
