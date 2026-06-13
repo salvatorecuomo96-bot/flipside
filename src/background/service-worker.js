@@ -37,6 +37,6 @@ async function handleAnalyze(payload) {
     }
     return { ok: true, data };
   } catch (err) {
-    return { ok: false, error: err?.message ?? "The analysis request failed." };
+    return { ok: false, error: err?.message ?? "The analysis request failed.", retryAfter: err?.retryAfter ?? 0 };
   }
 }

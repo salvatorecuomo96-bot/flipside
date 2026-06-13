@@ -37,11 +37,12 @@ function safeExtract() {
 
 async function handleToggle() {
   const panel = mountPanel();
-  if (panel.isOpen()) {
+  // Close on click only when showing a result — error state means retry instead.
+  if (panel.isOpen() && !panel.isError()) {
     panel.close();
     return;
   }
-  panel.open();
+  if (!panel.isOpen()) panel.open();
 
   const extraction = lastExtraction ?? safeExtract();
   if (!extraction || extraction.text.length < 200) {
@@ -63,7 +64,7 @@ async function handleToggle() {
       35000 // 30s model timeout + 5s buffer
     );
     if (res?.ok) panel.renderResult(res.data);
-    else panel.renderError(res?.error ?? "Something went wrong.");
+    else panel.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0);
   } catch (err) {
     if (err?.message === "client-timeout") {
       panel.renderError("Timed out. The model is still generating — close and try again.");

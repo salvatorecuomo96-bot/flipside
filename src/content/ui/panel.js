@@ -35,35 +35,65 @@ export function mountPanel() {
   const body = shadow.querySelector(".ec-body");
   let open = false;
 
+  let inErrorState = false;
+  let countdownId = null;
+  function clearCountdown() {
+    if (countdownId) { clearInterval(countdownId); countdownId = null; }
+  }
+
   shadow.querySelector(".ec-close").addEventListener("click", () => api.close());
 
   const api = {
     host,
     shadow,
     isOpen: () => open,
+    isError: () => inErrorState,
     open() {
       open = true;
       host.style.display = "block";
     },
     close() {
       open = false;
+      inErrorState = false;
+      clearCountdown();
       host.style.display = "none";
     },
     renderLoading() {
+      inErrorState = false;
+      clearCountdown();
       body.innerHTML = `
         <div class="ec-state ec-loading">
           <div class="ec-spinner" aria-hidden="true"></div>
           <p>Finding the strongest counter-perspective…</p>
         </div>`;
     },
-    renderError(message) {
+    renderError(message, retryAfter = 0) {
+      inErrorState = true;
+      clearCountdown();
       body.innerHTML = `
         <div class="ec-state ec-error">
           <p class="ec-error-title">Can't analyze this page</p>
           <p>${escapeHtml(message)}</p>
+          ${retryAfter > 0 ? `<p class="ec-retry-hint">Try again in <span class="ec-cd">${retryAfter}</span>s</p>` : ""}
         </div>`;
+      if (retryAfter > 0) {
+        let secs = retryAfter;
+        const cdEl = shadow.querySelector(".ec-cd");
+        const hintEl = shadow.querySelector(".ec-retry-hint");
+        countdownId = setInterval(() => {
+          secs--;
+          if (secs <= 0) {
+            clearCountdown();
+            if (hintEl) hintEl.textContent = "Ready — click the Flipside button to retry.";
+          } else if (cdEl) {
+            cdEl.textContent = String(secs);
+          }
+        }, 1000);
+      }
     },
     renderResult(data) {
+      inErrorState = false;
+      clearCountdown();
       body.innerHTML = renderResultHtml(data);
     },
   };
@@ -415,6 +445,15 @@ const TEMPLATE = `
       margin: 0;
       font-size: 13px;
       color: var(--ec-muted);
+    }
+    .ec-retry-hint {
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: var(--ec-muted);
+    }
+    .ec-cd {
+      font-variant-numeric: tabular-nums;
+      color: var(--ec-accent);
     }
   </style>
 

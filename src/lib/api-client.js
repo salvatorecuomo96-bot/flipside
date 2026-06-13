@@ -31,9 +31,9 @@ export async function callProxy({ title, text, url }) {
       // Worker tags the burst case with reason:"rate_limit".
       const body = await safeJson(resp);
       if (body?.reason === "rate_limit") {
-        throw new Error(
-          body.error || "Too many requests. Please wait a minute and try again."
-        );
+        const err = new Error(body.error || "Too many requests. Please wait a minute and try again.");
+        err.retryAfter = 60;
+        throw err;
       }
       throw new Error(
         "The free shared quota is used up for today. Add your own free Groq key in the extension options for unlimited personal use."
@@ -64,7 +64,7 @@ export async function callDirect({ apiKey, payload }) {
   });
 
   if (!resp.ok) {
-    if (resp.status === 429) throw new Error("Groq rate limit hit. Wait a moment and retry.");
+    if (resp.status === 429) { const err = new Error("Groq rate limit hit. Wait a moment and retry."); err.retryAfter = 60; throw err; }
     if (resp.status === 401) throw new Error("Invalid Groq API key. Check your key in options.");
     const detail = await safeErrorText(resp);
     throw new Error(`Groq error (${resp.status}): ${detail}`);
