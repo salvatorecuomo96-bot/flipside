@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Cloudflare Wrangler local state & secrets
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Environment / secrets — never commit these
+.env
+.env.*
+*.key
+secrets.json
+
+# Build output
+dist/
+*.zip
+
+# Editor / OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Epistemic Companion",
+  "version": "0.2.0",
+  "description": "A skeptical mirror for web content. Surfaces the strongest credible counter-perspective when one exists.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev/*",
+    "https://api.groq.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Show counter-perspective",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content/loader.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/content/main.js",
+        "src/content/extractor.js",
+        "src/content/ui/panel.js",
+        "src/lib/api-client.js",
+        "src/lib/prompt.js"
+      ],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}

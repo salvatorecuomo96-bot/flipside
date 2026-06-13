@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Epistemic Companion — Options</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <h1>Epistemic Companion</h1>
+  <p class="sub">By default the extension uses a free shared service — no setup needed.
+    Add your own free Groq key below for unlimited personal use (no shared quota).</p>
+
+  <div class="field">
+    <label for="apiKey">Groq API key <span class="optional">(optional)</span></label>
+    <input id="apiKey" type="password" placeholder="gsk_…" autocomplete="off" />
+    <p class="hint">
+      Leave blank to use the free shared service.
+      Get your own free key at <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a>
+      — free tier is generous and personal (no shared ceiling).
+    </p>
+  </div>
+
+  <div class="actions">
+    <button id="save">Save</button>
+    <button id="clear" class="secondary">Clear key</button>
+  </div>
+
+  <p id="status" class="status"></p>
+
+  <script src="options.js"></script>
+</body>
+</html>
