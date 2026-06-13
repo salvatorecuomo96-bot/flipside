@@ -21,3 +21,10 @@ simple = { limit = 15, period = 60 }
 # On the Workers free plan this simply stops rather than billing.
 [ai]
 binding = "AI"
+
+# KV cache — stores Groq results keyed by hash(url+text), TTL 6h.
+# Only Groq results are cached (high quality); fallback provider results are not,
+# so a rate-limited first-request can't poison the cache for everyone else.
+[[kv_namespaces]]
+binding = "CACHE"
+id = "39c459bbb2444bf585c688c091c1264c"

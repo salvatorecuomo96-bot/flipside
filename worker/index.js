@@ -270,28 +270,30 @@ async function callWorkersAI(env, messages) {
 // recoverable error. Stops on hard errors. If all fail, throws with .exhausted.
 
 const CHAIN = [
-  callGroq,
-  callCerebras,
-  callSambaNova,
-  callGemini,
-  callOpenRouter,
-  callWorkersAI,
+  { name: "groq",      fn: callGroq },
+  { name: "cerebras",  fn: callCerebras },
+  { name: "sambanova", fn: callSambaNova },
+  { name: "gemini",    fn: callGemini },
+  { name: "openrouter",fn: callOpenRouter },
+  { name: "workersai", fn: callWorkersAI },
 ];
 
+// Returns { content, provider } — provider name is used by the caller to decide
+// whether to cache (only Groq results are cached; see below).
 async function generate(env, messages) {
   const errors = [];
 
-  for (const provider of CHAIN) {
+  for (const { name, fn } of CHAIN) {
     try {
-      return await provider(env, messages);
+      const content = await fn(env, messages);
+      return { content, provider: name };
     } catch (err) {
-      if (!isRecoverable(err)) throw err; // hard error — stop immediately
-      if (err.kind !== "unconfigured") errors.push(err); // don't count skips
+      if (!isRecoverable(err)) throw err;
+      if (err.kind !== "unconfigured") errors.push(err);
     }
   }
 
   if (errors.length === 0) {
-    // Every provider was unconfigured — shouldn't happen in production
     throw tag("No AI providers configured.", "other");
   }
 
@@ -301,6 +303,30 @@ async function generate(env, messages) {
   out.lastKind = last?.kind ?? "other";
   out.retryAfter = last?.retryAfter ?? 60;
   throw out;
+}
+
+// --- KV cache helpers --------------------------------------------------------
+// Only Groq results are written. If Groq was rate-limited and a fallback
+// provider answered, that result is NOT cached — the next user deserves a
+// fresh Groq attempt rather than a potentially lower-quality cached response.
+
+const CACHE_TTL = 6 * 60 * 60; // 6 hours in seconds
+
+function buildCacheKey(url, text) {
+  const str = (url || "") + "\n" + (text || "");
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return "v1:" + String(h >>> 0);
+}
+
+async function kvGet(env, key) {
+  if (!env.CACHE) return null;
+  try { return await env.CACHE.get(key); } catch { return null; }
+}
+
+async function kvSet(env, key, value) {
+  if (!env.CACHE) return;
+  try { await env.CACHE.put(key, value, { expirationTtl: CACHE_TTL }); } catch {}
 }
 
 // --- Request handler ---------------------------------------------------------
@@ -345,9 +371,16 @@ export default {
 
     const messages = buildMessages({ title, text, url });
 
-    let content;
+    // Cache check — KV hit returns instantly and spends zero provider quota.
+    // Popular articles (viral news, trending pieces) are effectively served free
+    // after the first request. TTL is 6h so results stay reasonably fresh.
+    const cacheKey = buildCacheKey(url, text);
+    const cached = await kvGet(env, cacheKey);
+    if (cached) return json({ content: cached });
+
+    let result;
     try {
-      content = await generate(env, messages);
+      result = await generate(env, messages);
     } catch (err) {
       if (err.exhausted) {
         if (err.lastKind === "quota_daily") {
@@ -366,6 +399,15 @@ export default {
         );
       }
       return json({ error: err.message ?? "Generation failed." }, 502);
+    }
+
+    const { content, provider } = result;
+
+    // Only cache Groq results. Fallback provider results are not cached so a
+    // rate-limited first-user can't lock in a lower-quality response for everyone
+    // else for 6 hours.
+    if (provider === "groq") {
+      await kvSet(env, cacheKey, content);
     }
 
     return json({ content });

@@ -42,6 +42,9 @@ export function mountPanel() {
   }
 
   shadow.querySelector(".ec-close").addEventListener("click", () => api.close());
+  shadow.querySelector(".ec-byok-btn").addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+  });
 
   const api = {
     host,
@@ -487,6 +490,21 @@ const TEMPLATE = `
       font-variant-numeric: tabular-nums;
       color: var(--ec-accent);
     }
+
+    /* ── Footer ── */
+    .ec-footer {
+      padding: 8px 16px;
+      border-top: 1px solid var(--ec-border);
+      background: var(--ec-header);
+    }
+    .ec-byok-btn {
+      all: unset;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--ec-muted);
+      transition: color 0.12s;
+    }
+    .ec-byok-btn:hover { color: var(--ec-accent); }
   </style>
 
   <div class="ec-panel">
@@ -504,5 +522,8 @@ const TEMPLATE = `
     </div>
     <div class="ec-body">
       <div class="ec-state"><p style="color:var(--ec-muted);margin:0;font-size:12.5px">Ready.</p></div>
+    </div>
+    <div class="ec-footer">
+      <button class="ec-byok-btn">⚙ Use your own free Groq key</button>
     </div>
   </div>`;

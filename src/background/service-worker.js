@@ -22,6 +22,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     handleAnalyze(msg.payload).then(sendResponse);
     return true; // keep channel open for async response
   }
+  if (msg?.type === "OPEN_OPTIONS") {
+    chrome.runtime.openOptionsPage();
+    return false;
+  }
   return false;
 });
 
