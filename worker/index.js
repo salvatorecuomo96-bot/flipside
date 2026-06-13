@@ -110,6 +110,7 @@ export default {
           {
             error: "Too many requests. Please wait a minute and try again.",
             reason: "rate_limit",
+            retryAfter: 60,
           },
           429
         );
@@ -152,10 +153,39 @@ export default {
     }
 
     if (!groqResp.ok) {
-      // Pass Groq's status through so the extension can distinguish
-      // 429 (quota spent) from 5xx (transient). The extension renders
-      // a "free quota used up — add your own key" nudge on 429.
       const detail = await groqResp.text().catch(() => "");
+
+      // Groq 429s come in two flavors and we must NOT conflate them:
+      //   - per-minute (TPM/RPM): transient, clears within ~a minute. Groq's
+      //     message says "per minute" and often "try again in Xs".
+      //   - per-day (TPD/RPD): the day's shared budget is spent; resets at
+      //     midnight UTC. Telling the user to "wait a minute" here is a lie.
+      if (groqResp.status === 429) {
+        const lower = detail.toLowerCase();
+        const isDaily =
+          lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)");
+        if (isDaily) {
+          return json(
+            {
+              error:
+                "The shared free service has hit today's limit. It resets at midnight UTC. Add your own free Groq key in the extension options for your own quota.",
+              reason: "quota_daily",
+            },
+            429
+          );
+        }
+        const m = detail.match(/try again in ([\d.]+)s/i);
+        const retryAfter = m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60;
+        return json(
+          {
+            error: "The shared free service is busy right now.",
+            reason: "rate_limit",
+            retryAfter,
+          },
+          429
+        );
+      }
+
       return json(
         { error: `Groq ${groqResp.status}: ${detail.slice(0, 200)}` },
         groqResp.status

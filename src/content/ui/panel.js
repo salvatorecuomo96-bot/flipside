@@ -67,14 +67,24 @@ export function mountPanel() {
           <p>Finding the strongest counter-perspective…</p>
         </div>`;
     },
-    renderError(message, retryAfter = 0) {
+    renderError(message, retryAfter = 0, daily = false) {
       inErrorState = true;
       clearCountdown();
+      let extra = "";
+      if (retryAfter > 0) {
+        extra = `<p class="ec-retry-hint">Try again in <span class="ec-cd">${retryAfter}</span>s</p>`;
+      } else if (daily) {
+        // Daily caps reset at midnight UTC — show that in the user's local time.
+        const reset = new Date();
+        reset.setUTCHours(24, 0, 0, 0);
+        const local = reset.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        extra = `<p class="ec-retry-hint">Resets around ${escapeHtml(local)} your time.</p>`;
+      }
       body.innerHTML = `
         <div class="ec-state ec-error">
           <p class="ec-error-title">Can't analyze this page</p>
           <p>${escapeHtml(message)}</p>
-          ${retryAfter > 0 ? `<p class="ec-retry-hint">Try again in <span class="ec-cd">${retryAfter}</span>s</p>` : ""}
+          ${extra}
         </div>`;
       if (retryAfter > 0) {
         let secs = retryAfter;

@@ -26,18 +26,30 @@ export async function callProxy({ title, text, url }) {
 
   if (!resp.ok) {
     if (resp.status === 429) {
-      // Two different 429s: a per-IP burst limit (transient — just wait) vs.
-      // the shared daily Groq quota being exhausted (add your own key). The
-      // Worker tags the burst case with reason:"rate_limit".
+      // Three 429 cases, distinguished by the Worker's `reason` tag:
+      //   rate_limit  — transient (per-IP burst or Groq per-minute). Wait it out;
+      //                 `retryAfter` drives the countdown in the panel.
+      //   quota_daily — the shared key's daily Groq budget is spent (back tomorrow).
+      //   (none)      — legacy/unknown Worker; treat as daily.
       const body = await safeJson(resp);
       if (body?.reason === "rate_limit") {
-        const err = new Error(body.error || "Too many requests. Please wait a minute and try again.");
-        err.retryAfter = 60;
+        const err = new Error(body.error || "The service is busy. Please wait a moment.");
+        err.retryAfter = body.retryAfter || 60;
         throw err;
       }
-      throw new Error(
-        "The free shared quota is used up for today. Add your own free Groq key in the extension options for unlimited personal use."
+      if (body?.reason === "quota_daily") {
+        const err = new Error(
+          body.error ||
+            "The shared free service has hit today's limit. Add your own free Groq key in the extension options for your own quota."
+        );
+        err.daily = true;
+        throw err;
+      }
+      const err = new Error(
+        "The shared free service has hit today's limit. Add your own free Groq key in the extension options for your own quota."
       );
+      err.daily = true;
+      throw err;
     }
     const detail = await safeErrorText(resp);
     throw new Error(`Proxy error (${resp.status}): ${detail}`);
@@ -64,9 +76,22 @@ export async function callDirect({ apiKey, payload }) {
   });
 
   if (!resp.ok) {
-    if (resp.status === 429) { const err = new Error("Groq rate limit hit. Wait a moment and retry."); err.retryAfter = 60; throw err; }
-    if (resp.status === 401) throw new Error("Invalid Groq API key. Check your key in options.");
     const detail = await safeErrorText(resp);
+    if (resp.status === 429) {
+      const lower = detail.toLowerCase();
+      // Per-day cap on the user's own key: resets at midnight UTC, no countdown.
+      if (lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)")) {
+        const err = new Error("Your Groq key hit today's free limit. It resets at midnight UTC.");
+        err.daily = true;
+        throw err;
+      }
+      // Per-minute cap: transient. Use Groq's own "try again in Xs" when present.
+      const m = detail.match(/try again in ([\d.]+)s/i);
+      const err = new Error("Groq rate limit — too many requests this minute.");
+      err.retryAfter = m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60;
+      throw err;
+    }
+    if (resp.status === 401) throw new Error("Invalid Groq API key. Check your key in options.");
     throw new Error(`Groq error (${resp.status}): ${detail}`);
   }
 

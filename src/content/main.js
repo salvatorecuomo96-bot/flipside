@@ -64,7 +64,7 @@ async function handleToggle() {
       35000 // 30s model timeout + 5s buffer
     );
     if (res?.ok) panel.renderResult(res.data);
-    else panel.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0);
+    else panel.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
   } catch (err) {
     if (err?.message === "client-timeout") {
       panel.renderError("Timed out. The model is still generating — close and try again.");
