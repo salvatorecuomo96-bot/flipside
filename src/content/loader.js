@@ -14,6 +14,6 @@
     mod.init();
   } catch (err) {
     // Never throw into the host page; just log under our namespace.
-    console.error("[Epistemic Companion] content module failed to load:", err);
+    console.error("[Flipside] content module failed to load:", err);
   }
 })();

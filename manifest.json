@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Epistemic Companion",
+  "name": "Flipside",
   "version": "0.2.0",
   "description": "A skeptical mirror for web content. Surfaces the strongest credible counter-perspective when one exists.",
   "permissions": ["activeTab", "storage"],

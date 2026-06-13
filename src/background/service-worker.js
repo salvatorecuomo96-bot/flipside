@@ -12,7 +12,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_PANEL" });
   } catch (err) {
-    console.warn("[Epistemic Companion] no content script on this tab:", err?.message);
+    console.warn("[Flipside] no content script on this tab:", err?.message);
   }
 });
 

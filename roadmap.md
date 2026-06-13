@@ -1,4 +1,4 @@
-# Roadmap — Epistemic Companion (Autonomous Perspective Engine)
+# Roadmap — Flipside (Autonomous Perspective Engine)
 
 > Living document. Updated as phases land. Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 

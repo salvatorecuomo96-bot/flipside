@@ -1,4 +1,4 @@
-// Epistemic Companion — Cloudflare Worker proxy
+// Flipside — Cloudflare Worker proxy
 //
 // Accepts POST { title, text, url } from the extension.
 // Builds the prompt server-side, calls Groq, returns { content } (raw model JSON).
@@ -11,7 +11,7 @@ const MODEL = "llama-3.3-70b-versatile";
 const MAX_TEXT_CHARS = 12000; // ~3k tokens; longer texts get truncated by the extension anyway
 
 // Keep this byte-identical to src/lib/prompt.js in the extension.
-const SYSTEM_PROMPT = `You are the Epistemic Companion — a "skeptical mirror" for an article.
+const SYSTEM_PROMPT = `You are Flipside — a "skeptical mirror" for an article.
 
 YOUR JOB: judge whether a credible, SUBSTANTIVE counter-perspective to the article's central
 thesis exists. If one does, surface the single strongest. If one does NOT, say so plainly.
@@ -60,9 +60,14 @@ OUTPUT: respond with ONLY a JSON object, no prose around it, matching exactly:
     "found": <true|false>,
     "perspective": "<the counter-perspective, one tight paragraph; empty string if found=false>",
     "reasoning": "<why a credible expert would hold it; empty string if found=false>",
-    "sources": ["<real source OR described evidence type>", "..."]
+    "sources": ["<real source OR described evidence type>", "..."],
+    "key_figures": ["<named researcher, institution, or publication known for this counter view — real names only, e.g. 'Lawrence Summers', 'Pew Research Center'>", "..."],
+    "search_queries": ["<specific search query that surfaces strong evidence for the counter view, e.g. 'four-day week productivity sector variation meta-analysis'>", "..."]
   }
-}`;
+}
+
+For key_figures: 1–3 real names only. Empty array if found=false or genuinely unknown.
+For search_queries: 2–3 specific queries (not generic). Empty array if found=false.`;
 
 function buildMessages({ title, text, url }) {
   const user = [
@@ -95,6 +100,25 @@ export default {
     const origin = request.headers.get("Origin") || "";
     if (!origin.startsWith("chrome-extension://")) {
       return new Response("Forbidden", { status: 403 });
+    }
+
+    // Per-IP rate limit (Cloudflare native limiter — see wrangler.toml binding).
+    // Stops one client from bursting through the shared daily quota. We mark the
+    // response with reason:"rate_limit" so the extension shows a "slow down" nudge
+    // rather than the "daily quota used up — add your key" message, which is only
+    // correct when Groq itself returns 429 (passed through further below).
+    if (env.RATE_LIMITER) {
+      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+      const { success } = await env.RATE_LIMITER.limit({ key: ip });
+      if (!success) {
+        return json(
+          {
+            error: "Too many requests. Please wait a minute and try again.",
+            reason: "rate_limit",
+          },
+          429
+        );
+      }
     }
 
     // Parse body

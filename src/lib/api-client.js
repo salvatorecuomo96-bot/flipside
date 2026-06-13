@@ -26,6 +26,15 @@ export async function callProxy({ title, text, url }) {
 
   if (!resp.ok) {
     if (resp.status === 429) {
+      // Two different 429s: a per-IP burst limit (transient — just wait) vs.
+      // the shared daily Groq quota being exhausted (add your own key). The
+      // Worker tags the burst case with reason:"rate_limit".
+      const body = await safeJson(resp);
+      if (body?.reason === "rate_limit") {
+        throw new Error(
+          body.error || "Too many requests. Please wait a minute and try again."
+        );
+      }
       throw new Error(
         "The free shared quota is used up for today. Add your own free Groq key in the extension options for unlimited personal use."
       );
@@ -87,6 +96,15 @@ async function safeErrorText(resp) {
     return d?.error?.message || JSON.stringify(d).slice(0, 200);
   } catch {
     return resp.statusText || "no detail";
+  }
+}
+
+// Read a JSON body without throwing (a response body can only be read once).
+async function safeJson(resp) {
+  try {
+    return await resp.json();
+  } catch {
+    return null;
   }
 }
 

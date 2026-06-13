@@ -30,7 +30,7 @@ function safeExtract() {
   try {
     return extractMainContent(document);
   } catch (err) {
-    console.error("[Epistemic Companion] extraction failed:", err);
+    console.error("[Flipside] extraction failed:", err);
     return null;
   }
 }

@@ -5,3 +5,13 @@ compatibility_date = "2024-01-01"
 # No KV, no Durable Objects, no paid features — pure free tier.
 # The GROQ_API_KEY secret is set via: wrangler secret put GROQ_API_KEY
 # It will never appear in this file.
+
+# Per-IP rate limiting via Cloudflare's native Rate Limiting binding (free, no
+# storage). Stops a single client from bursting through the shared daily quota.
+# limit = requests allowed per `period` seconds, per key (we key on client IP).
+# period must be 10 or 60. namespace_id is any unique number you pick per limiter.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 15, period = 60 }

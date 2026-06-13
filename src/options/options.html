@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Epistemic Companion — Options</title>
+  <title>Flipside — Options</title>
   <link rel="stylesheet" href="options.css" />
 </head>
 <body>
-  <h1>Epistemic Companion</h1>
+  <h1>Flipside</h1>
   <p class="sub">By default the extension uses a free shared service — no setup needed.
     Add your own free Groq key below for unlimited personal use (no shared quota).</p>
 
@@ -26,6 +26,15 @@
   </div>
 
   <p id="status" class="status"></p>
+
+  <section class="privacy">
+    <h2>Privacy</h2>
+    <p>Nothing is sent when you open a page. <strong>Only when you click the Flipside button</strong>,
+      the current article's title, URL, and text are sent to the analysis service — a hosted proxy by
+      default, or directly to Groq if you've added your own key — solely to generate the
+      counter-perspective. No account is required and no personal data is collected. Your optional
+      Groq key is stored only on this device (<code>chrome.storage.local</code>) and is sent only to Groq.</p>
+  </section>
 
   <script src="options.js"></script>
 </body>

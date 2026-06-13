@@ -15,14 +15,14 @@ export function mountPanel() {
   if (controller) return controller;
 
   const host = document.createElement("div");
-  host.id = "epistemic-companion-host";
+  host.id = "flipside-host";
   host.style.cssText = [
     "all: initial",
     "display: none",
     "position: fixed",
     "top: 16px",
     "right: 16px",
-    "width: 460px",
+    "width: 520px",
     "max-width: calc(100vw - 32px)",
     "z-index: 2147483647",
   ].join(";");
@@ -94,19 +94,54 @@ function renderResultHtml(data) {
   }
 
   const sources = Array.isArray(counter.sources) ? counter.sources : [];
+  const keyFigures = Array.isArray(counter.key_figures) ? counter.key_figures : [];
+  const searchQueries = Array.isArray(counter.search_queries) ? counter.search_queries : [];
+
+  const reasoningHtml = counter.reasoning
+    ? `<div>
+         <p class="ec-label">Why experts disagree</p>
+         <p class="ec-reasoning">${escapeHtml(counter.reasoning)}</p>
+       </div>`
+    : "";
+
+  const keyFiguresHtml = keyFigures.length
+    ? `<div>
+         <p class="ec-label">Key voices</p>
+         <div class="ec-figures">${keyFigures.map((f) => `<span class="ec-figure">${escapeHtml(f)}</span>`).join("")}</div>
+       </div>`
+    : "";
+
+  const searchQueriesHtml = searchQueries.length
+    ? `<div>
+         <p class="ec-label">Explore further</p>
+         <ul class="ec-sources-list">${searchQueries.map((q) => `<li>${searchQueryToLink(q)}</li>`).join("")}</ul>
+       </div>`
+    : "";
+
   const sourcesHtml = sources.length
-    ? `<div class="ec-sources">
-         <button class="ec-sources-toggle" aria-expanded="false" onclick="
-           var btn=this, list=this.nextElementSibling;
+    ? `<div>
+         <p class="ec-label">Evidence &amp; sources</p>
+         <ul class="ec-sources-list">${sources.map((s) => `<li>${linkifySource(s)}</li>`).join("")}</ul>
+       </div>`
+    : "";
+
+  const hasMore = reasoningHtml || keyFiguresHtml || searchQueriesHtml || sourcesHtml;
+  const learnMoreHtml = hasMore
+    ? `<div class="ec-more">
+         <button class="ec-more-toggle" aria-expanded="false" onclick="
+           var btn=this, section=this.nextElementSibling;
            var open=btn.getAttribute('aria-expanded')==='true';
            btn.setAttribute('aria-expanded', open ? 'false' : 'true');
-           list.classList.toggle('open', !open);
+           section.classList.toggle('open', !open);
          ">
-           <i class="ec-toggle-arrow">▶</i> Evidence &amp; sources
+           <i class="ec-more-arrow">▶</i> Learn more
          </button>
-         <ul class="ec-sources-list">
-           ${sources.map((s) => `<li>${linkifySource(s)}</li>`).join("")}
-         </ul>
+         <div class="ec-more-section">
+           ${reasoningHtml}
+           ${keyFiguresHtml}
+           ${searchQueriesHtml}
+           ${sourcesHtml}
+         </div>
        </div>`
     : "";
 
@@ -115,8 +150,7 @@ function renderResultHtml(data) {
     <section class="ec-section">
       <p class="ec-label">Strongest counter-perspective</p>
       <p class="ec-perspective">${escapeHtml(counter.perspective ?? "")}</p>
-      ${counter.reasoning ? `<p class="ec-reasoning">${escapeHtml(counter.reasoning)}</p>` : ""}
-      ${sourcesHtml}
+      ${learnMoreHtml}
     </section>`;
 }
 
@@ -147,6 +181,11 @@ function linkifySource(str) {
   const query = encodeURIComponent(trimmed);
   const href = `https://duckduckgo.com/?q=${query}`;
   return `<a class="ec-src-search" href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+}
+
+function searchQueryToLink(q) {
+  const href = `https://duckduckgo.com/?q=${encodeURIComponent(q.trim())}`;
+  return `<a class="ec-src-search" href="${href}" target="_blank" rel="noopener noreferrer">${escapeHtml(q)}</a>`;
 }
 
 function escapeHtml(str) {
@@ -308,20 +347,45 @@ const TEMPLATE = `
       color: var(--ec-text);
     }
     .ec-reasoning {
-      margin: 0 0 10px;
+      margin: 0;
       font-size: 13px;
       font-weight: 400;
       line-height: 1.65;
       color: var(--ec-text);
     }
 
-    /* ── Sources (collapsible) ── */
-    .ec-sources {
-      margin-top: 11px;
-      padding-top: 11px;
+    /* ── Sources list ── */
+    .ec-sources-list {
+      padding: 0; margin: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .ec-sources-list li {
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .ec-sources-list a {
+      text-decoration: none;
+      word-break: break-word;
+      display: block;
+    }
+    .ec-sources-list a:hover { text-decoration: underline; }
+    .ec-src-direct,
+    .ec-src-search { color: var(--ec-accent); }
+    .ec-src-search::before {
+      content: '↗ ';
+      font-size: 11px;
+    }
+
+    /* ── Learn more (collapsible) ── */
+    .ec-more {
+      margin-top: 12px;
+      padding-top: 12px;
       border-top: 1px solid var(--ec-border);
     }
-    .ec-sources-toggle {
+    .ec-more-toggle {
       all: unset;
       cursor: pointer;
       display: flex;
@@ -335,41 +399,39 @@ const TEMPLATE = `
       transition: color 0.12s;
       user-select: none;
     }
-    .ec-sources-toggle:hover { color: var(--ec-text); }
-    .ec-toggle-arrow {
+    .ec-more-toggle:hover { color: var(--ec-text); }
+    .ec-more-arrow {
       display: inline-block;
       font-style: normal;
       font-size: 8px;
       transition: transform 0.18s;
       opacity: 0.6;
     }
-    .ec-sources-toggle[aria-expanded="true"] .ec-toggle-arrow {
+    .ec-more-toggle[aria-expanded="true"] .ec-more-arrow {
       transform: rotate(90deg);
     }
-    .ec-sources-list {
+    .ec-more-section {
       display: none;
-      padding: 0; margin: 6px 0 0;
-      list-style: none;
+      margin-top: 14px;
       flex-direction: column;
-      gap: 5px;
+      gap: 14px;
     }
-    .ec-sources-list.open { display: flex; }
-    .ec-sources-list li {
-      font-size: 13px;
-      line-height: 1.65;
+    .ec-more-section.open { display: flex; }
+
+    /* ── Key figures (pill badges) ── */
+    .ec-figures {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0;
     }
-    .ec-sources-list a {
-      text-decoration: none;
-      word-break: break-word;
-      display: block;
-    }
-    .ec-sources-list a:hover { text-decoration: underline; }
-    /* both link types use accent color — same visual weight */
-    .ec-src-direct,
-    .ec-src-search { color: var(--ec-accent); }
-    .ec-src-search::before {
-      content: '↗ ';
-      font-size: 11px;
+    .ec-figure {
+      padding: 3px 10px;
+      background: var(--ec-tint);
+      border: 1px solid var(--ec-border);
+      border-radius: 99px;
+      font-size: 12px;
+      color: var(--ec-text);
     }
 
     /* ── States ── */
@@ -422,7 +484,7 @@ const TEMPLATE = `
     <div class="ec-header">
       <span class="ec-wordmark">
         <span class="ec-gem">◆</span>
-        Epistemic Companion
+        Flipside
       </span>
       <button class="ec-close" title="Close" aria-label="Close">
         <svg viewBox="0 0 11 11">
