@@ -35,6 +35,22 @@ function safeExtract() {
   }
 }
 
+// Retry extraction up to 4 times with 500ms gaps. Handles early clicks where
+// the DOM hasn't finished rendering the article body yet.
+async function extractWithRetry() {
+  if (lastExtraction?.text.length >= 200) return lastExtraction;
+  for (let i = 0; i < 4; i++) {
+    const result = safeExtract();
+    if (result?.text.length >= 200) {
+      lastExtraction = result;
+      lastHash = hashText(result.text);
+      return result;
+    }
+    if (i < 3) await new Promise((r) => setTimeout(r, 500));
+  }
+  return null;
+}
+
 async function handleToggle() {
   const panel = mountPanel();
   // Close on click only when showing a result — error state means retry instead.
@@ -44,13 +60,15 @@ async function handleToggle() {
   }
   if (!panel.isOpen()) panel.open();
 
-  const extraction = lastExtraction ?? safeExtract();
-  if (!extraction || extraction.text.length < 200) {
+  // Show the spinner immediately so the user sees feedback, then retry
+  // extraction — clicking right after page load may catch the DOM before
+  // article content has fully rendered, so we wait up to ~1.5s before giving up.
+  panel.renderLoading();
+  const extraction = await extractWithRetry();
+  if (!extraction) {
     panel.renderError("Couldn't find a readable article on this page.");
     return;
   }
-
-  panel.renderLoading();
   try {
     const res = await withTimeout(
       chrome.runtime.sendMessage({
