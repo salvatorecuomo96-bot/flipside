@@ -81,15 +81,24 @@ RULES:
    surface: return "found": false. Re-presenting the article's own content as a counter is a
    failure, not a success.
 
+DEPTH REQUIREMENT (applies when found=true):
+Generic statements are failures. "Experts would look at fundamentals" — failure.
+"Comparable companies trade lower" — failure. You must be SPECIFIC:
+- Name the specific data point, ratio, or number that undermines the thesis.
+- Name the specific comparable case, institution, study, or expert position.
+- Name the specific mechanism by which the counter holds — not just that it exists.
+If you genuinely don't know a specific figure, describe what that evidence looks like and
+why it would exist — but never pad with vague category words.
+
 OUTPUT: respond with ONLY a JSON object, no prose around it, matching exactly:
 {
   "thesis": "<the central contestable thesis in one sentence, OR 'none — <category, e.g. advice/listicle/human-interest>'>",
   "claims": ["<core claim>", "..."],
   "counter": {
     "found": <true|false>,
-    "perspective": "<the counter-perspective in 2–3 sentences; empty string if found=false>",
-    "reasoning": "<why a credible expert would hold it; empty string if found=false>",
-    "sources": ["<real source OR described evidence type>", "..."]
+    "perspective": "<the counter-perspective in 4–6 sentences. Be specific: name figures, ratios, institutions, comparable cases, historical precedents, or named expert positions. Do not use vague category language. Empty string if found=false>",
+    "reasoning": "<3–5 sentences explaining the specific mechanism behind the counter: which data points, which analytical framework, which comparable cases, and why they lead a credible expert to the opposite conclusion. This must add new specifics beyond the perspective — not restate it. Empty string if found=false>",
+    "sources": ["<real source OR described evidence type — be specific enough to find by search>", "..."]
   }
 }`;
 
