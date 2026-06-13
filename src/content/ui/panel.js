@@ -150,12 +150,19 @@ function renderResultHtml(data) {
        </div>`
     : "";
 
+  const reasoningHtml = counter.reasoning
+    ? `<div class="ec-reasoning-block">
+         <p class="ec-reasoning-label">Why experts hold this</p>
+         <p class="ec-reasoning">${escapeHtml(counter.reasoning)}</p>
+       </div>`
+    : "";
+
   return `
     ${claimsHtml}
     <section class="ec-section">
       <p class="ec-label">Strongest counter-perspective</p>
       <p class="ec-perspective">${escapeHtml(counter.perspective ?? "")}</p>
-      ${counter.reasoning ? `<p class="ec-reasoning">${escapeHtml(counter.reasoning)}</p>` : ""}
+      ${reasoningHtml}
       ${sourcesHtml}
     </section>`;
 }
@@ -341,18 +348,33 @@ const TEMPLATE = `
 
     /* ── Counter text ── */
     .ec-perspective {
-      margin: 0 0 10px;
+      margin: 0 0 12px;
       font-size: 13px;
       font-weight: 400;
       line-height: 1.65;
       color: var(--ec-text);
     }
+    .ec-reasoning-block {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      background: var(--ec-tint);
+      border-radius: 8px;
+      border-left: 2px solid var(--ec-muted);
+    }
+    .ec-reasoning-label {
+      margin: 0 0 5px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.7px;
+      text-transform: uppercase;
+      color: var(--ec-muted);
+    }
     .ec-reasoning {
-      margin: 0 0 10px;
-      font-size: 13px;
+      margin: 0;
+      font-size: 12.5px;
       font-weight: 400;
       line-height: 1.65;
-      color: var(--ec-text);
+      color: var(--ec-muted);
     }
 
     /* ── Sources (collapsible) ── */
