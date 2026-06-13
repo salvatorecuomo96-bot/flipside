@@ -5,17 +5,31 @@
 // provider is a separate free quota, so when one is rate-limited or daily-capped
 // we fall through to the next instead of failing the user.
 //
-// Current chain (in order):
-//   1. Groq            — Llama 3.3 70B, fast, JSON mode.  Secret: GROQ_API_KEY.
-//   2. Workers AI      — Llama 3.3 70B, native env.AI binding, separate free pool.
+// Current chain (tried in order):
+//   1. Groq         — Llama 3.3 70B, fast, JSON mode.       Secret: GROQ_API_KEY
+//   2. Cerebras     — Llama 3.3 70B, very fast.             Secret: CEREBRAS_API_KEY
+//   3. SambaNova    — Llama 3.3 70B, generous free tier.    Secret: SAMBANOVA_API_KEY
+//   4. Google Gemini— Gemini 2.0 Flash, 1,500 req/day free. Secret: GEMINI_API_KEY
+//   5. OpenRouter   — Llama 3.3 70B free model.             Secret: OPENROUTER_API_KEY
+//   6. Workers AI   — Llama 3.3 70B, native env.AI binding, no key needed.
 //
-// To add a provider: write callX(env, messages) returning a content string or
-// throwing tag(...), add its key as a wrangler secret, append to PROVIDERS below.
+// Adding a provider: write callX(env, messages) returning a content string or
+// throwing tag(...), add its key via `wrangler secret put`, append to CHAIN below.
 // Keys are Worker secrets — never in source code, never sent to clients.
 
-const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
-const WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const GROQ_ENDPOINT      = "https://api.groq.com/openai/v1/chat/completions";
+const CEREBRAS_ENDPOINT  = "https://api.cerebras.ai/v1/chat/completions";
+const SAMBANOVA_ENDPOINT = "https://api.sambanova.ai/v1/chat/completions";
+const GEMINI_ENDPOINT    = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const OPENROUTER_ENDPOINT= "https://openrouter.ai/api/v1/chat/completions";
+
+const GROQ_MODEL      = "llama-3.3-70b-versatile";
+const CEREBRAS_MODEL  = "llama3.3-70b";
+const SAMBANOVA_MODEL = "Meta-Llama-3.3-70B-Instruct";
+const GEMINI_MODEL    = "gemini-2.0-flash";
+const OPENROUTER_MODEL= "meta-llama/llama-3.3-70b-instruct:free";
+const WORKERS_AI_MODEL= "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
 const MAX_TEXT_CHARS = 12000;
 
 // Keep this byte-identical to src/lib/prompt.js in the extension.
@@ -91,10 +105,14 @@ function buildMessages({ title, text, url }) {
   ];
 }
 
-// --- Provider helpers --------------------------------------------------------
+// --- Error tagging -----------------------------------------------------------
 
-// Attach metadata to an error so the chain knows whether to fall through.
-// kind: 'rate_minute' | 'quota_daily' | 'transient' | 'other'
+// kind values:
+//   'unconfigured' — key not present; silently skip this provider
+//   'rate_minute'  — per-minute limit; fall through, retry-able
+//   'quota_daily'  — day's budget spent; fall through, try next provider
+//   'transient'    — network/timeout; fall through
+//   'other'        — hard error (bad request, etc.); stop the chain
 function tag(msg, kind, retryAfter = 0) {
   const err = new Error(msg);
   err.kind = kind;
@@ -102,31 +120,38 @@ function tag(msg, kind, retryAfter = 0) {
   return err;
 }
 
-// Returns true for error kinds that warrant trying the next provider.
 function isRecoverable(err) {
-  return err.kind === "rate_minute" || err.kind === "quota_daily" || err.kind === "transient";
+  return (
+    err.kind === "unconfigured" ||
+    err.kind === "rate_minute" ||
+    err.kind === "quota_daily" ||
+    err.kind === "transient"
+  );
 }
 
-async function callGroq(env, messages) {
-  if (!env.GROQ_API_KEY) throw tag("Groq key not configured.", "other");
+// --- Generic OpenAI-compatible caller ----------------------------------------
+// All five external providers speak the same /v1/chat/completions shape.
+// `jsonMode` enables response_format: json_object where supported (Groq, Gemini).
+
+async function callOpenAICompat({ endpoint, apiKey, model, messages, name, jsonMode = false, extraHeaders = {} }) {
+  if (!apiKey) throw tag(`${name} key not configured.`, "unconfigured");
+
+  const body = { model, messages, temperature: 0.2 };
+  if (jsonMode) body.response_format = { type: "json_object" };
 
   let resp;
   try {
-    resp = await fetch(GROQ_ENDPOINT, {
+    resp = await fetch(endpoint, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.GROQ_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        ...extraHeaders,
       },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
+      body: JSON.stringify(body),
     });
   } catch {
-    throw tag("Network error reaching Groq.", "transient");
+    throw tag(`Network error reaching ${name}.`, "transient");
   }
 
   if (!resp.ok) {
@@ -134,62 +159,126 @@ async function callGroq(env, messages) {
     if (resp.status === 429) {
       const lower = detail.toLowerCase();
       const isDaily =
-        lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)");
-      if (isDaily) throw tag("Groq daily quota exhausted.", "quota_daily");
+        lower.includes("per day") ||
+        lower.includes("(rpd)") ||
+        lower.includes("(tpd)") ||
+        lower.includes("daily") ||
+        lower.includes("quota") ||
+        lower.includes("exceeded");
+      if (isDaily) throw tag(`${name} daily quota exhausted.`, "quota_daily");
       const m = detail.match(/try again in ([\d.]+)s/i);
-      throw tag("Groq rate limit.", "rate_minute", m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60);
+      throw tag(`${name} rate limit.`, "rate_minute", m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60);
     }
-    throw tag(`Groq ${resp.status}.`, "other");
+    throw tag(`${name} ${resp.status}.`, "other");
   }
 
   const data = await resp.json();
   return data?.choices?.[0]?.message?.content ?? "";
 }
 
+// --- Per-provider wrappers ---------------------------------------------------
+
+function callGroq(env, messages) {
+  return callOpenAICompat({
+    endpoint: GROQ_ENDPOINT,
+    apiKey: env.GROQ_API_KEY,
+    model: GROQ_MODEL,
+    messages,
+    name: "Groq",
+    jsonMode: true,
+  });
+}
+
+function callCerebras(env, messages) {
+  return callOpenAICompat({
+    endpoint: CEREBRAS_ENDPOINT,
+    apiKey: env.CEREBRAS_API_KEY,
+    model: CEREBRAS_MODEL,
+    messages,
+    name: "Cerebras",
+  });
+}
+
+function callSambaNova(env, messages) {
+  return callOpenAICompat({
+    endpoint: SAMBANOVA_ENDPOINT,
+    apiKey: env.SAMBANOVA_API_KEY,
+    model: SAMBANOVA_MODEL,
+    messages,
+    name: "SambaNova",
+  });
+}
+
+function callGemini(env, messages) {
+  return callOpenAICompat({
+    endpoint: GEMINI_ENDPOINT,
+    apiKey: env.GEMINI_API_KEY,
+    model: GEMINI_MODEL,
+    messages,
+    name: "Gemini",
+    jsonMode: true,
+  });
+}
+
+function callOpenRouter(env, messages) {
+  return callOpenAICompat({
+    endpoint: OPENROUTER_ENDPOINT,
+    apiKey: env.OPENROUTER_API_KEY,
+    model: OPENROUTER_MODEL,
+    messages,
+    name: "OpenRouter",
+    // OpenRouter requires this header to identify the app on free models
+    extraHeaders: { "HTTP-Referer": "https://github.com/salvatorecuomo96-bot/counterargumentbot" },
+  });
+}
+
 async function callWorkersAI(env, messages) {
-  if (!env.AI) throw tag("Workers AI binding not available.", "other");
+  if (!env.AI) throw tag("Workers AI binding not available.", "unconfigured");
 
   let out;
   try {
     out = await env.AI.run(WORKERS_AI_MODEL, { messages, temperature: 0.2 });
   } catch (err) {
     const msg = (err?.message ?? "").toLowerCase();
-    // Workers AI surfaces quota exhaustion as an exception with keywords like
-    // "exceeded", "quota", or "limit" — treat as daily so the error message is honest.
     if (msg.includes("quota") || msg.includes("exceeded") || msg.includes("limit")) {
       throw tag("Workers AI quota exhausted.", "quota_daily");
     }
     throw tag(`Workers AI error: ${err?.message}`, "transient");
   }
 
-  // env.AI.run returns { response: string } for text-generation models
   return out?.response ?? "";
 }
 
 // --- Provider chain ----------------------------------------------------------
-// Try each provider in order. Fall through on recoverable errors (rate limits,
-// quota). Stop on hard errors (misconfiguration, bad request). If all fail,
-// throw with .exhausted=true so the caller can return the right HTTP response.
+// Tried in order. Skips unconfigured providers silently. Falls through on any
+// recoverable error. Stops on hard errors. If all fail, throws with .exhausted.
+
+const CHAIN = [
+  callGroq,
+  callCerebras,
+  callSambaNova,
+  callGemini,
+  callOpenRouter,
+  callWorkersAI,
+];
 
 async function generate(env, messages) {
   const errors = [];
 
-  // 1. Groq — primary (fast, JSON mode)
-  try {
-    return await callGroq(env, messages);
-  } catch (err) {
-    if (!isRecoverable(err)) throw err;
-    errors.push(err);
+  for (const provider of CHAIN) {
+    try {
+      return await provider(env, messages);
+    } catch (err) {
+      if (!isRecoverable(err)) throw err; // hard error — stop immediately
+      if (err.kind !== "unconfigured") errors.push(err); // don't count skips
+    }
   }
 
-  // 2. Workers AI — fallback (separate free pool, no key needed)
-  try {
-    return await callWorkersAI(env, messages);
-  } catch (err) {
-    errors.push(err);
+  if (errors.length === 0) {
+    // Every provider was unconfigured — shouldn't happen in production
+    throw tag("No AI providers configured.", "other");
   }
 
-  // All providers exhausted
   const last = errors[errors.length - 1];
   const out = new Error("All providers exhausted.");
   out.exhausted = true;
@@ -213,7 +302,7 @@ export default {
     }
 
     // Per-IP rate limit (native Cloudflare binding — see wrangler.toml).
-    // This fires BEFORE we spend any provider quota, so one client can't starve others.
+    // Fires before spending any provider quota, so one user can't starve others.
     if (env.RATE_LIMITER) {
       const ip = request.headers.get("CF-Connecting-IP") || "unknown";
       const { success } = await env.RATE_LIMITER.limit({ key: ip });
