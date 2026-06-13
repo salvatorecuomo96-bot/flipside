@@ -45,6 +45,7 @@ export function mountPanel() {
   shadow.querySelector(".ec-byok-btn").addEventListener("click", () => {
     chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
   });
+  shadow.querySelector(".ec-paste-btn").addEventListener("click", () => api.renderPasteMode());
 
   const api = {
     host,
@@ -109,6 +110,42 @@ export function mountPanel() {
       clearCountdown();
       body.innerHTML = renderResultHtml(data);
     },
+    renderPasteMode() {
+      inErrorState = false;
+      clearCountdown();
+      body.innerHTML = `
+        <div class="ec-paste-mode">
+          <p class="ec-label">Paste article text</p>
+          <textarea class="ec-paste-area" placeholder="Paste any text here to analyze it…" spellcheck="false"></textarea>
+          <div class="ec-paste-actions">
+            <button class="ec-paste-submit">Analyze</button>
+            <span class="ec-paste-hint"></span>
+          </div>
+        </div>`;
+      shadow.querySelector(".ec-paste-submit").addEventListener("click", async () => {
+        const text = shadow.querySelector(".ec-paste-area").value.trim();
+        const hint = shadow.querySelector(".ec-paste-hint");
+        if (text.length < 200) {
+          hint.textContent = "Paste at least a paragraph of text.";
+          return;
+        }
+        api.renderLoading();
+        try {
+          const res = await Promise.race([
+            chrome.runtime.sendMessage({ type: "ANALYZE", payload: { title: "(pasted text)", text, url: "" } }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("client-timeout")), 35000)),
+          ]);
+          if (res?.ok) api.renderResult(res.data);
+          else api.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
+        } catch (err) {
+          api.renderError(
+            err?.message === "client-timeout"
+              ? "Timed out — close and try again."
+              : "Couldn't reach the background service."
+          );
+        }
+      });
+    },
   };
 
   controller = api;
@@ -153,21 +190,16 @@ function renderResultHtml(data) {
        </div>`
     : "";
 
-  const reasoningHtml = counter.reasoning
-    ? `<div class="ec-reasoning-block">
-         <p class="ec-reasoning-label">Why experts hold this</p>
-         ${counter.reasoning.split(/\n\n+/).filter(Boolean).map(
-           (p) => `<p class="ec-reasoning">${escapeHtml(p.trim())}</p>`
-         ).join("")}
-       </div>`
-    : "";
+  // Perspective + reasoning merged into one flowing block — no sub-label.
+  const allParas = [counter.perspective ?? "", ...(counter.reasoning ? counter.reasoning.split(/\n\n+/) : [])]
+    .map((p) => p.trim()).filter(Boolean);
+  const perspectiveHtml = allParas.map((p) => `<p class="ec-perspective">${escapeHtml(p)}</p>`).join("");
 
   return `
     ${claimsHtml}
     <section class="ec-section">
       <p class="ec-label">Strongest counter-perspective</p>
-      <p class="ec-perspective">${escapeHtml(counter.perspective ?? "")}</p>
-      ${reasoningHtml}
+      ${perspectiveHtml}
       ${sourcesHtml}
     </section>`;
 }
@@ -353,35 +385,47 @@ const TEMPLATE = `
 
     /* ── Counter text ── */
     .ec-perspective {
-      margin: 0 0 12px;
+      margin: 0 0 10px;
       font-size: 13px;
       font-weight: 400;
       line-height: 1.65;
       color: var(--ec-text);
     }
-    .ec-reasoning-block {
-      margin: 0 0 12px;
-      padding: 10px 12px;
+    .ec-perspective:last-of-type { margin-bottom: 0; }
+
+    /* ── Paste mode ── */
+    .ec-paste-mode { display: flex; flex-direction: column; gap: 10px; }
+    .ec-paste-area {
+      width: 100%;
+      min-height: 130px;
+      padding: 10px 11px;
       background: var(--ec-tint);
+      border: 1px solid var(--ec-border);
       border-radius: 8px;
-      border-left: 2px solid var(--ec-muted);
-    }
-    .ec-reasoning-label {
-      margin: 0 0 5px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.7px;
-      text-transform: uppercase;
-      color: var(--ec-muted);
-    }
-    .ec-reasoning {
-      margin: 0 0 8px;
+      color: var(--ec-text);
+      font-family: inherit;
       font-size: 12.5px;
-      font-weight: 400;
-      line-height: 1.65;
-      color: var(--ec-muted);
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+      box-sizing: border-box;
     }
-    .ec-reasoning:last-child { margin-bottom: 0; }
+    .ec-paste-area:focus { border-color: var(--ec-accent); }
+    .ec-paste-area::placeholder { color: var(--ec-muted); }
+    .ec-paste-actions { display: flex; align-items: center; gap: 10px; }
+    .ec-paste-submit {
+      all: unset;
+      cursor: pointer;
+      padding: 7px 15px;
+      background: var(--ec-accent);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 7px;
+      transition: opacity 0.12s;
+    }
+    .ec-paste-submit:hover { opacity: 0.85; }
+    .ec-paste-hint { font-size: 11px; color: var(--ec-red); }
 
     /* ── Sources (collapsible) ── */
     .ec-sources {
@@ -496,18 +540,22 @@ const TEMPLATE = `
 
     /* ── Footer ── */
     .ec-footer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 8px 16px;
       border-top: 1px solid var(--ec-border);
       background: var(--ec-header);
     }
-    .ec-byok-btn {
+    .ec-footer-sep { font-size: 11px; color: var(--ec-border); }
+    .ec-byok-btn, .ec-paste-btn {
       all: unset;
       cursor: pointer;
       font-size: 11px;
       color: var(--ec-muted);
       transition: color 0.12s;
     }
-    .ec-byok-btn:hover { color: var(--ec-accent); }
+    .ec-byok-btn:hover, .ec-paste-btn:hover { color: var(--ec-accent); }
   </style>
 
   <div class="ec-panel">
@@ -527,6 +575,8 @@ const TEMPLATE = `
       <div class="ec-state"><p style="color:var(--ec-muted);margin:0;font-size:12.5px">Ready.</p></div>
     </div>
     <div class="ec-footer">
-      <button class="ec-byok-btn">⚙ Use your own free Groq key</button>
+      <button class="ec-byok-btn">⚙ Own key</button>
+      <span class="ec-footer-sep">·</span>
+      <button class="ec-paste-btn">✎ Paste text</button>
     </div>
   </div>`;
