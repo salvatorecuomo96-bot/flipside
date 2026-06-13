@@ -52,16 +52,11 @@ OUTPUT: respond with ONLY a JSON object, no prose around it, matching exactly:
   "claims": ["<core claim>", "..."],
   "counter": {
     "found": <true|false>,
-    "perspective": "<the counter-perspective, one tight paragraph; empty string if found=false>",
+    "perspective": "<the counter-perspective in 2–3 sentences; empty string if found=false>",
     "reasoning": "<why a credible expert would hold it; empty string if found=false>",
-    "sources": ["<real source OR described evidence type>", "..."],
-    "key_figures": ["<named researcher, institution, or publication known for this counter view — real names only, e.g. 'Lawrence Summers', 'Pew Research Center'>", "..."],
-    "search_queries": ["<specific search query that surfaces strong evidence for the counter view, e.g. 'four-day week productivity sector variation meta-analysis'>", "..."]
+    "sources": ["<real source OR described evidence type>", "..."]
   }
-}
-
-For key_figures: 1–3 real names only. Empty array if found=false or genuinely unknown.
-For search_queries: 2–3 specific queries (not generic). Empty array if found=false.`;
+}`;
 
 /**
  * @param {{ title: string, text: string, url: string }} article
