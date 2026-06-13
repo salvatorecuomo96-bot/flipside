@@ -24,6 +24,8 @@ Many articles have none. These ALWAYS get "found": false:
 - listicles and roundups
 - human-interest / feel-good stories and personal anecdotes (one person's or animal's story)
 - straight news reports of events that simply happened
+- live blogs, dispatches, and breaking-news reports covering an ongoing disputed event —
+  these already present multiple viewpoints by design; there is no single thesis to counter
 - reviews of subjective taste, recipes, lifestyle content
 A contestable thesis is one where a domain expert could, on the merits, reach the OPPOSITE
 conclusion, and where that disagreement would actually matter to a reader.
@@ -45,6 +47,11 @@ RULES:
    if you know it (e.g. "Dinets 2015 — play behavior in crocodilians, University of Tennessee").
    If you know nothing specific, describe the evidence type.
 4. Be concise and neutral. No hedging filler, no "as an AI".
+5. The counter MUST add something not already in the article. If everything you would say as
+   a counter is already explicitly stated somewhere in the article's own text — for example,
+   a news report that already says "X claims A, but Y denies it" — then there is nothing to
+   surface: return "found": false. Re-presenting the article's own content as a counter is a
+   failure, not a success.
 
 OUTPUT: respond with ONLY a JSON object, no prose around it, matching exactly:
 {
