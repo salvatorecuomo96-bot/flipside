@@ -15,3 +15,9 @@ name = "RATE_LIMITER"
 type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 15, period = 60 }
+
+# Workers AI binding — free native inference, separate quota from Groq.
+# No key needed; Cloudflare bills neurons against the account's free allowance.
+# On the Workers free plan this simply stops rather than billing.
+[ai]
+binding = "AI"

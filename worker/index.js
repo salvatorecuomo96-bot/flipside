@@ -1,14 +1,22 @@
 // Flipside — Cloudflare Worker proxy
 //
-// Accepts POST { title, text, url } from the extension.
-// Builds the prompt server-side, calls Groq, returns { content } (raw model JSON).
+// Accepts POST { title, text, url } from the extension. Builds the prompt
+// server-side and generates a counter-perspective via a PROVIDER CHAIN — each
+// provider is a separate free quota, so when one is rate-limited or daily-capped
+// we fall through to the next instead of failing the user.
 //
-// GROQ_API_KEY is a Worker secret — never in code, never on the wire to clients.
-// Deploy: wrangler secret put GROQ_API_KEY
+// Current chain (in order):
+//   1. Groq            — Llama 3.3 70B, fast, JSON mode.  Secret: GROQ_API_KEY.
+//   2. Workers AI      — Llama 3.3 70B, native env.AI binding, separate free pool.
+//
+// To add a provider: write callX(env, messages) returning a content string or
+// throwing tag(...), add its key as a wrangler secret, append to PROVIDERS below.
+// Keys are Worker secrets — never in source code, never sent to clients.
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-const MAX_TEXT_CHARS = 12000; // ~3k tokens; longer texts get truncated by the extension anyway
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+const WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const MAX_TEXT_CHARS = 12000;
 
 // Keep this byte-identical to src/lib/prompt.js in the extension.
 const SYSTEM_PROMPT = `You are Flipside — a "skeptical mirror" for an article.
@@ -83,41 +91,140 @@ function buildMessages({ title, text, url }) {
   ];
 }
 
+// --- Provider helpers --------------------------------------------------------
+
+// Attach metadata to an error so the chain knows whether to fall through.
+// kind: 'rate_minute' | 'quota_daily' | 'transient' | 'other'
+function tag(msg, kind, retryAfter = 0) {
+  const err = new Error(msg);
+  err.kind = kind;
+  err.retryAfter = retryAfter;
+  return err;
+}
+
+// Returns true for error kinds that warrant trying the next provider.
+function isRecoverable(err) {
+  return err.kind === "rate_minute" || err.kind === "quota_daily" || err.kind === "transient";
+}
+
+async function callGroq(env, messages) {
+  if (!env.GROQ_API_KEY) throw tag("Groq key not configured.", "other");
+
+  let resp;
+  try {
+    resp = await fetch(GROQ_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      }),
+    });
+  } catch {
+    throw tag("Network error reaching Groq.", "transient");
+  }
+
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => "");
+    if (resp.status === 429) {
+      const lower = detail.toLowerCase();
+      const isDaily =
+        lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)");
+      if (isDaily) throw tag("Groq daily quota exhausted.", "quota_daily");
+      const m = detail.match(/try again in ([\d.]+)s/i);
+      throw tag("Groq rate limit.", "rate_minute", m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60);
+    }
+    throw tag(`Groq ${resp.status}.`, "other");
+  }
+
+  const data = await resp.json();
+  return data?.choices?.[0]?.message?.content ?? "";
+}
+
+async function callWorkersAI(env, messages) {
+  if (!env.AI) throw tag("Workers AI binding not available.", "other");
+
+  let out;
+  try {
+    out = await env.AI.run(WORKERS_AI_MODEL, { messages, temperature: 0.2 });
+  } catch (err) {
+    const msg = (err?.message ?? "").toLowerCase();
+    // Workers AI surfaces quota exhaustion as an exception with keywords like
+    // "exceeded", "quota", or "limit" — treat as daily so the error message is honest.
+    if (msg.includes("quota") || msg.includes("exceeded") || msg.includes("limit")) {
+      throw tag("Workers AI quota exhausted.", "quota_daily");
+    }
+    throw tag(`Workers AI error: ${err?.message}`, "transient");
+  }
+
+  // env.AI.run returns { response: string } for text-generation models
+  return out?.response ?? "";
+}
+
+// --- Provider chain ----------------------------------------------------------
+// Try each provider in order. Fall through on recoverable errors (rate limits,
+// quota). Stop on hard errors (misconfiguration, bad request). If all fail,
+// throw with .exhausted=true so the caller can return the right HTTP response.
+
+async function generate(env, messages) {
+  const errors = [];
+
+  // 1. Groq — primary (fast, JSON mode)
+  try {
+    return await callGroq(env, messages);
+  } catch (err) {
+    if (!isRecoverable(err)) throw err;
+    errors.push(err);
+  }
+
+  // 2. Workers AI — fallback (separate free pool, no key needed)
+  try {
+    return await callWorkersAI(env, messages);
+  } catch (err) {
+    errors.push(err);
+  }
+
+  // All providers exhausted
+  const last = errors[errors.length - 1];
+  const out = new Error("All providers exhausted.");
+  out.exhausted = true;
+  out.lastKind = last?.kind ?? "other";
+  out.retryAfter = last?.retryAfter ?? 60;
+  throw out;
+}
+
+// --- Request handler ---------------------------------------------------------
+
 export default {
   async fetch(request, env) {
-    // Only POST
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
     }
 
-    // Speed bump: only chrome extensions should be calling this.
-    // Not a hard security gate (Origin is forgeable), but filters casual misuse.
+    // Speed bump — filters casual misuse (Origin is forgeable but still useful).
     const origin = request.headers.get("Origin") || "";
     if (!origin.startsWith("chrome-extension://")) {
       return new Response("Forbidden", { status: 403 });
     }
 
-    // Per-IP rate limit (Cloudflare native limiter — see wrangler.toml binding).
-    // Stops one client from bursting through the shared daily quota. We mark the
-    // response with reason:"rate_limit" so the extension shows a "slow down" nudge
-    // rather than the "daily quota used up — add your key" message, which is only
-    // correct when Groq itself returns 429 (passed through further below).
+    // Per-IP rate limit (native Cloudflare binding — see wrangler.toml).
+    // This fires BEFORE we spend any provider quota, so one client can't starve others.
     if (env.RATE_LIMITER) {
       const ip = request.headers.get("CF-Connecting-IP") || "unknown";
       const { success } = await env.RATE_LIMITER.limit({ key: ip });
       if (!success) {
         return json(
-          {
-            error: "Too many requests. Please wait a minute and try again.",
-            reason: "rate_limit",
-            retryAfter: 60,
-          },
+          { error: "Too many requests. Please wait a minute and try again.", reason: "rate_limit", retryAfter: 60 },
           429
         );
       }
     }
 
-    // Parse body
     let body;
     try {
       body = await request.json();
@@ -127,44 +234,18 @@ export default {
 
     const { title = "", text = "", url = "" } = body;
 
-    // Size cap — rejects unusually large payloads before they hit Groq
     if (typeof text !== "string" || text.length > MAX_TEXT_CHARS) {
       return json({ error: "Article text too long." }, 400);
     }
 
-    // Call Groq
-    let groqResp;
+    const messages = buildMessages({ title, text, url });
+
+    let content;
     try {
-      groqResp = await fetch(GROQ_ENDPOINT, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: buildMessages({ title, text, url }),
-          temperature: 0.2,
-          response_format: { type: "json_object" },
-        }),
-      });
+      content = await generate(env, messages);
     } catch (err) {
-      return json({ error: "Network error reaching Groq." }, 502);
-    }
-
-    if (!groqResp.ok) {
-      const detail = await groqResp.text().catch(() => "");
-
-      // Groq 429s come in two flavors and we must NOT conflate them:
-      //   - per-minute (TPM/RPM): transient, clears within ~a minute. Groq's
-      //     message says "per minute" and often "try again in Xs".
-      //   - per-day (TPD/RPD): the day's shared budget is spent; resets at
-      //     midnight UTC. Telling the user to "wait a minute" here is a lie.
-      if (groqResp.status === 429) {
-        const lower = detail.toLowerCase();
-        const isDaily =
-          lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)");
-        if (isDaily) {
+      if (err.exhausted) {
+        if (err.lastKind === "quota_daily") {
           return json(
             {
               error:
@@ -174,26 +255,14 @@ export default {
             429
           );
         }
-        const m = detail.match(/try again in ([\d.]+)s/i);
-        const retryAfter = m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60;
         return json(
-          {
-            error: "The shared free service is busy right now.",
-            reason: "rate_limit",
-            retryAfter,
-          },
+          { error: "The shared free service is busy right now.", reason: "rate_limit", retryAfter: err.retryAfter ?? 60 },
           429
         );
       }
-
-      return json(
-        { error: `Groq ${groqResp.status}: ${detail.slice(0, 200)}` },
-        groqResp.status
-      );
+      return json({ error: err.message ?? "Generation failed." }, 502);
     }
 
-    const groqData = await groqResp.json();
-    const content = groqData?.choices?.[0]?.message?.content ?? "";
     return json({ content });
   },
 };
