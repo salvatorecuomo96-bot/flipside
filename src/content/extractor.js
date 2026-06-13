@@ -1,37 +1,46 @@
 // extractor.js — pull the "main content" out of an arbitrary page.
 //
-// Design stance: class names and ids are the single most volatile part of a
-// web page. A selector like `.article-body__text--v2` is dead the day the site
-// redeploys. So instead of *matching*, we *score*. We rank candidate block
-// elements by signals that correlate with "this is the article" — text length,
-// paragraph count, and (inversely) link density — and pick the winner.
-//
-// This is a lightweight reimplementation of the core idea behind Mozilla's
-// Readability. For production you would vendor `@mozilla/readability`; this
-// version is dependency-free and good enough to demonstrate the principle.
+// Two-strategy approach:
+//   1. Collect all <p> tags from semantic containers (article, main). Works on
+//      the vast majority of news and editorial sites — they consistently put
+//      body text in <p> inside <article>. Fast and robust.
+//   2. Scoring fallback: rank block containers by text length, paragraph count,
+//      and link density, then take the winner. Handles sites that don't use <p>
+//      well (some use <div> for paragraphs, or lack semantic structure).
 
+const SKIP_TAGS = new Set(["NAV", "ASIDE", "FOOTER", "HEADER", "SCRIPT", "STYLE", "FIGURE", "FIGCAPTION", "FORM"]);
 const CONTAINER_TAGS = new Set(["ARTICLE", "MAIN", "SECTION", "DIV"]);
 const POSITIVE_HINT = /(article|content|post|story|entry|main|body|text)/i;
 const NEGATIVE_HINT = /(comment|sidebar|footer|header|nav|menu|promo|share|social|related|recommend|ad-|advert|cookie|banner)/i;
-const MAX_TEXT_CHARS = 12000; // cap to control token cost downstream
+const MAX_TEXT_CHARS = 12000;
 
 /**
  * @param {Document} doc
  * @returns {{ title: string, text: string }}
  */
 export function extractMainContent(doc) {
+  const title = extractTitle(doc);
+
+  // Strategy 1: collect <p> tags from semantic containers.
+  // Ordered by specificity: named article containers first, then main.
+  const semanticCandidates = [
+    ...Array.from(doc.querySelectorAll("article, [role='article']")),
+    doc.querySelector("main, [role='main']"),
+  ].filter(Boolean);
+
+  for (const container of semanticCandidates) {
+    const text = collectParagraphText(container);
+    if (text.length >= 200) return { title, text };
+  }
+
+  // Strategy 2: scoring fallback for sites without good semantic structure.
   const root = doc.body || doc.documentElement;
-  if (!root) return { title: extractTitle(doc), text: "" };
+  if (!root) return { title, text: "" };
 
-  // Prefer an explicit semantic container as the *search scope*, but still
-  // score inside it — a site may wrap teasers in <article> too.
   const scope = doc.querySelector("article, main, [role='main']") || root;
-
   let best = scope;
   let bestScore = scoreNode(scope);
 
-  // Walk only block-level containers; text nodes and inline elements are noise
-  // for "which container is the article" question.
   const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT, {
     acceptNode: (node) =>
       CONTAINER_TAGS.has(node.tagName)
@@ -49,13 +58,34 @@ export function extractMainContent(doc) {
   }
 
   const text = normalizeText(best.innerText || best.textContent || "");
-  return { title: extractTitle(doc), text };
+  return { title, text };
+}
+
+// Collect text from <p> tags inside a container, skipping nav/aside/footer etc.
+function collectParagraphText(container) {
+  const parts = [];
+  for (const p of container.querySelectorAll("p")) {
+    if (isInsideSkipped(p, container)) continue;
+    const t = (p.innerText || p.textContent || "").trim();
+    if (t.length > 20) parts.push(t);
+  }
+  return normalizeText(parts.join("\n\n"));
+}
+
+// Walk up from el to root; return true if any ancestor is in SKIP_TAGS.
+function isInsideSkipped(el, root) {
+  let node = el.parentElement;
+  while (node && node !== root) {
+    if (SKIP_TAGS.has(node.tagName)) return true;
+    node = node.parentElement;
+  }
+  return false;
 }
 
 function scoreNode(el) {
   const text = el.innerText || el.textContent || "";
   const len = text.length;
-  if (len < 140) return -Infinity; // too short to be an article body
+  if (len < 140) return -Infinity;
 
   const paragraphs = el.querySelectorAll("p").length;
   const linkTextLen = Array.from(el.querySelectorAll("a")).reduce(
@@ -65,9 +95,9 @@ function scoreNode(el) {
   const linkDensity = len > 0 ? linkTextLen / len : 1;
 
   let score = 0;
-  score += Math.min(len / 100, 60); // raw length, capped so a giant <body> can't auto-win
-  score += paragraphs * 3; // real articles are paragraph-dense
-  score -= linkDensity * 45; // link-dense blocks are navigation/aggregation, not prose
+  score += Math.min(len / 100, 60);
+  score += paragraphs * 3;
+  score -= linkDensity * 45;
 
   const idClass = `${el.id} ${el.className}`;
   if (POSITIVE_HINT.test(idClass)) score += 25;
