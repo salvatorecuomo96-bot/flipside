@@ -12,13 +12,11 @@ const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 const TIMEOUT_MS = 30000; // Groq is fast; 30s is generous
 
-export async function callProxy({ title, text, url }) {
+export async function callProxy({ title, text, url }, onChunk) {
   const resp = await fetchWithTimeout(PROXY_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      // Origin tells the Worker this is the extension, not a browser tab.
-      // Not a hard security gate (forgeable), but filters casual misuse.
       "Origin": `chrome-extension://${chrome.runtime.id}`,
     },
     body: JSON.stringify({ title, text, url }),
@@ -26,27 +24,14 @@ export async function callProxy({ title, text, url }) {
 
   if (!resp.ok) {
     if (resp.status === 429) {
-      // Three 429 cases, distinguished by the Worker's `reason` tag:
-      //   rate_limit  — transient (per-IP burst or Groq per-minute). Wait it out;
-      //                 `retryAfter` drives the countdown in the panel.
-      //   quota_daily — the shared key's daily Groq budget is spent (back tomorrow).
-      //   (none)      — legacy/unknown Worker; treat as daily.
       const body = await safeJson(resp);
       if (body?.reason === "rate_limit") {
         const err = new Error(body.error || "The service is busy. Please wait a moment.");
         err.retryAfter = body.retryAfter || 60;
         throw err;
       }
-      if (body?.reason === "quota_daily") {
-        const err = new Error(
-          body.error ||
-            "The shared free service has hit today's limit. Add your own free Groq key in the extension options for your own quota."
-        );
-        err.daily = true;
-        throw err;
-      }
       const err = new Error(
-        "The shared free service has hit today's limit. Add your own free Groq key in the extension options for your own quota."
+        body?.error || "The shared free service has hit today's limit. Add your own free Groq key in the extension options for your own quota."
       );
       err.daily = true;
       throw err;
@@ -55,12 +40,10 @@ export async function callProxy({ title, text, url }) {
     throw new Error(`Proxy error (${resp.status}): ${detail}`);
   }
 
-  const { content, error } = await resp.json();
-  if (error) throw new Error(`Proxy: ${error}`);
-  return parsePerspective(content ?? "");
+  return processStream(resp, onChunk);
 }
 
-export async function callDirect({ apiKey, payload }) {
+export async function callDirect({ apiKey, payload }, onChunk) {
   const resp = await fetchWithTimeout(GROQ_ENDPOINT, {
     method: "POST",
     headers: {
@@ -72,6 +55,7 @@ export async function callDirect({ apiKey, payload }) {
       messages: buildMessages(payload),
       temperature: 0.2,
       response_format: { type: "json_object" },
+      stream: true
     }),
   });
 
@@ -79,13 +63,11 @@ export async function callDirect({ apiKey, payload }) {
     const detail = await safeErrorText(resp);
     if (resp.status === 429) {
       const lower = detail.toLowerCase();
-      // Per-day cap on the user's own key: resets at midnight UTC, no countdown.
       if (lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)")) {
         const err = new Error("Your Groq key hit today's free limit. It resets at midnight UTC.");
         err.daily = true;
         throw err;
       }
-      // Per-minute cap: transient. Use Groq's own "try again in Xs" when present.
       const m = detail.match(/try again in ([\d.]+)s/i);
       const err = new Error("Groq rate limit — too many requests this minute.");
       err.retryAfter = m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60;
@@ -95,9 +77,54 @@ export async function callDirect({ apiKey, payload }) {
     throw new Error(`Groq error (${resp.status}): ${detail}`);
   }
 
-  const data = await resp.json();
-  const content = data?.choices?.[0]?.message?.content ?? "";
-  return parsePerspective(content);
+  return processStream(resp, onChunk);
+}
+
+async function processStream(resp, onChunk) {
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    let lines = buffer.split("\n");
+    buffer = lines.pop(); // keep the last incomplete line
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const dataStr = line.slice(6).trim();
+        if (dataStr === "[DONE]") continue;
+        try {
+          const data = JSON.parse(dataStr);
+          const chunk = data?.choices?.[0]?.delta?.content ?? "";
+          if (chunk) {
+            fullText += chunk;
+            if (onChunk) onChunk(fullText);
+          }
+        } catch {
+          // Ignore invalid JSON chunks (some providers send comments or bad formatting)
+        }
+      }
+    }
+  }
+  
+  if (buffer.startsWith("data: ")) {
+    try {
+      const dataStr = buffer.slice(6).trim();
+      if (dataStr !== "[DONE]") {
+        const data = JSON.parse(dataStr);
+        const chunk = data?.choices?.[0]?.delta?.content ?? "";
+        if (chunk) fullText += chunk;
+      }
+    } catch {}
+  }
+
+  if (onChunk) onChunk(fullText);
+  return parsePerspective(fullText);
 }
 
 // --- helpers ------------------------------------------------------------------

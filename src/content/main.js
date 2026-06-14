@@ -30,7 +30,7 @@ function safeExtract() {
   try {
     return extractMainContent(document);
   } catch (err) {
-    console.error("[Flipside] extraction failed:", err);
+    console.error("[FlipSide] extraction failed:", err);
     return null;
   }
 }
@@ -51,8 +51,44 @@ async function extractWithRetry() {
   return null;
 }
 
+function streamAnalyze(payload, panel) {
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    const port = chrome.runtime.connect({ name: "stream-analyze" });
+    const timeout = setTimeout(() => {
+      if (!resolved) { port.disconnect(); reject(new Error("client-timeout")); }
+    }, 35000);
+
+    port.onMessage.addListener((msg) => {
+      if (msg.type === "CHUNK") {
+        if (panel && panel.renderPartial) panel.renderPartial(msg.text);
+      } else if (msg.type === "DONE") {
+        resolved = true;
+        clearTimeout(timeout);
+        port.disconnect();
+        resolve(msg.result);
+      } else if (msg.type === "ERROR") {
+        resolved = true;
+        clearTimeout(timeout);
+        port.disconnect();
+        resolve({ ok: false, error: msg.error });
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(new Error("disconnected"));
+      }
+    });
+
+    port.postMessage({ type: "ANALYZE", payload });
+  });
+}
+
 async function handleToggle() {
-  const panel = mountPanel();
+  const panel = mountPanel(streamAnalyze);
   // Close on click only when showing a result — error state means retry instead.
   if (panel.isOpen() && !panel.isError()) {
     panel.close();
@@ -70,17 +106,12 @@ async function handleToggle() {
     return;
   }
   try {
-    const res = await withTimeout(
-      chrome.runtime.sendMessage({
-        type: "ANALYZE",
-        payload: {
-          title: extraction.title,
-          text: extraction.text,
-          url: location.href,
-        },
-      }),
-      35000 // 30s model timeout + 5s buffer
-    );
+    const res = await streamAnalyze({
+      title: extraction.title,
+      text: extraction.text,
+      url: location.href,
+    }, panel);
+    
     if (res?.ok) panel.renderResult(res.data);
     else panel.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
   } catch (err) {
@@ -90,18 +121,6 @@ async function handleToggle() {
       panel.renderError("Couldn't reach the background service. Try reloading the page.");
     }
   }
-}
-
-// Client-side backstop: the service worker has its own per-request timeout, but
-// if the worker itself is torn down mid-flight, sendMessage never resolves. This
-// guarantees the UI always reaches a terminal state.
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("client-timeout")), ms)
-    ),
-  ]);
 }
 
 // --- SPA handling ---------------------------------------------------------

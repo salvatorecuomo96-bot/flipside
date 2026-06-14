@@ -1,7 +1,7 @@
-# Flipside
+# FlipSide
 
 A Chrome extension (Manifest V3) that acts as a **skeptical mirror** for the page you're reading.
-Click the toolbar button and Flipside surfaces the single strongest *credible* counter-perspective
+Click the toolbar button and FlipSide surfaces the single strongest *credible* counter-perspective
 to the article's central thesis — or tells you plainly when none exists. It is **not** a debate bot,
 a summarizer, or a bias detector, and it is designed to **stay silent** when an article has no
 genuinely contestable claim (how-tos, listicles, human-interest, straight news).
@@ -20,7 +20,7 @@ to use their own personal quota instead of the shared one.
 1. Open `chrome://extensions`.
 2. Toggle **Developer mode** (top right).
 3. Click **Load unpacked** and select this folder.
-4. Open any article and click the Flipside toolbar icon. A floating panel appears (top-right).
+4. Open any article and click the FlipSide toolbar icon. A floating panel appears (top-right).
    Click the icon again to close it.
 
 ## How it works

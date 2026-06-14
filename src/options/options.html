@@ -2,21 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Flipside — Options</title>
+  <title>FlipSide — Options</title>
   <link rel="stylesheet" href="options.css" />
 </head>
 <body>
-  <h1>Flipside</h1>
+  <h1>FlipSide</h1>
   <p class="sub">By default the extension uses a free shared service — no setup needed.
-    Add your own free Groq key below for unlimited personal use (no shared quota).</p>
+    Use your own API Key below to bypass shared quotas and guarantee unlimited personal use.</p>
 
   <div class="field">
-    <label for="apiKey">Groq API key <span class="optional">(optional)</span></label>
-    <input id="apiKey" type="password" placeholder="gsk_…" autocomplete="off" />
+    <label for="apiKey">API Key <span class="optional">(optional)</span></label>
+    <input id="apiKey" type="password" placeholder="Paste your API key here..." autocomplete="off" />
     <p class="hint">
-      Leave blank to use the free shared service.
-      Get your own free key at <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a>
-      — free tier is generous and personal (no shared ceiling).
+      Leave blank to use the free shared service.<br><br>
+      <strong>Tip:</strong> Don't have one? You can get a free key at <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a>.
     </p>
   </div>
 
@@ -29,7 +28,7 @@
 
   <section class="privacy">
     <h2>Privacy</h2>
-    <p>Nothing is sent when you open a page. <strong>Only when you click the Flipside button</strong>,
+    <p>Nothing is sent when you open a page. <strong>Only when you click the FlipSide button</strong>,
       the current article's title, URL, and text are sent to the analysis service — a hosted proxy by
       default, or directly to Groq if you've added your own key — solely to generate the
       counter-perspective. No account is required and no personal data is collected. Your optional

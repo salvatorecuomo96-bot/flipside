@@ -11,7 +11,7 @@ export function getPanel() {
   return controller;
 }
 
-export function mountPanel() {
+export function mountPanel(onAnalyze) {
   if (controller) return controller;
 
   const host = document.createElement("div");
@@ -71,6 +71,45 @@ export function mountPanel() {
           <p>Finding the strongest counter-perspective…</p>
         </div>`;
     },
+    renderPartial(text) {
+      inErrorState = false;
+      clearCountdown();
+
+      if (text.includes('"found":false') || text.includes('"found": false')) {
+        body.innerHTML = `
+          <section class="ec-section">
+            <p class="ec-label">Counter-perspective</p>
+            <p class="ec-none-msg">No credible counter-evidence found.</p>
+          </section>`;
+        return;
+      }
+
+      const matchP = text.match(/"perspective"\s*:\s*"((?:[^"\\]|\\.)*)/);
+      let p = matchP ? matchP[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\') : "";
+      
+      const matchR = text.match(/"reasoning"\s*:\s*"((?:[^"\\]|\\.)*)/);
+      let r = matchR ? matchR[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\') : "";
+
+      if (p || r) {
+        const allParas = [p, ...(r ? r.split(/\n\n+/) : [])].map(x => x.trim()).filter(Boolean);
+        const perspectiveHtml = allParas.map((x, i) => {
+          const isLast = i === allParas.length - 1;
+          return `<p class="ec-perspective">${escapeHtml(x)}${isLast ? '<span class="ec-cursor"></span>' : ''}</p>`;
+        }).join("");
+        
+        body.innerHTML = `
+          <section class="ec-section">
+            <p class="ec-label">Strongest counter-perspective</p>
+            ${perspectiveHtml}
+          </section>`;
+      } else {
+        body.innerHTML = `
+          <div class="ec-state ec-loading">
+            <div class="ec-spinner" aria-hidden="true"></div>
+            <p>Analyzing core claims…</p>
+          </div>`;
+      }
+    },
     renderError(message, retryAfter = 0, daily = false) {
       inErrorState = true;
       clearCountdown();
@@ -78,7 +117,6 @@ export function mountPanel() {
       if (retryAfter > 0) {
         extra = `<p class="ec-retry-hint">Try again in <span class="ec-cd">${retryAfter}</span>s</p>`;
       } else if (daily) {
-        // Daily caps reset at midnight UTC — show that in the user's local time.
         const reset = new Date();
         reset.setUTCHours(24, 0, 0, 0);
         const local = reset.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -98,7 +136,7 @@ export function mountPanel() {
           secs--;
           if (secs <= 0) {
             clearCountdown();
-            if (hintEl) hintEl.textContent = "Ready — click the Flipside button to retry.";
+            if (hintEl) hintEl.textContent = "Ready — click the FlipSide button to retry.";
           } else if (cdEl) {
             cdEl.textContent = String(secs);
           }
@@ -131,12 +169,11 @@ export function mountPanel() {
         }
         api.renderLoading();
         try {
-          const res = await Promise.race([
-            chrome.runtime.sendMessage({ type: "ANALYZE", payload: { title: "(pasted text)", text, url: "" } }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("client-timeout")), 35000)),
-          ]);
-          if (res?.ok) api.renderResult(res.data);
-          else api.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
+          if (onAnalyze) {
+            const res = await onAnalyze({ title: "(pasted text)", text, url: "" }, api);
+            if (res?.ok) api.renderResult(res.data);
+            else api.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
+          }
         } catch (err) {
           api.renderError(
             err?.message === "client-timeout"
@@ -562,7 +599,7 @@ const TEMPLATE = `
     <div class="ec-header">
       <span class="ec-wordmark">
         <span class="ec-gem">◆</span>
-        Flipside
+        FlipSide
       </span>
       <button class="ec-close" title="Close" aria-label="Close">
         <svg viewBox="0 0 11 11">
@@ -575,7 +612,7 @@ const TEMPLATE = `
       <div class="ec-state"><p style="color:var(--ec-muted);margin:0;font-size:12.5px">Ready.</p></div>
     </div>
     <div class="ec-footer">
-      <button class="ec-byok-btn">⚙ Own key</button>
+      <button class="ec-byok-btn">⚙ Connect your API Key</button>
       <span class="ec-footer-sep">·</span>
       <button class="ec-paste-btn">✎ Paste text</button>
     </div>

@@ -16,6 +16,7 @@
 // Adding a provider: write callX(env, messages) returning a content string or
 // throwing tag(...), add its key via `wrangler secret put`, append to CHAIN below.
 // Keys are Worker secrets — never in source code, never sent to clients.
+// Cache: bump CACHE_KEY_VERSION in the KV helpers whenever the system prompt changes.
 
 const GROQ_ENDPOINT      = "https://api.groq.com/openai/v1/chat/completions";
 const CEREBRAS_ENDPOINT  = "https://api.cerebras.ai/v1/chat/completions";
@@ -326,17 +327,17 @@ async function generate(env, messages) {
 }
 
 // --- KV cache helpers --------------------------------------------------------
-// Only Groq results are written. If Groq was rate-limited and a fallback
-// provider answered, that result is NOT cached — the next user deserves a
-// fresh Groq attempt rather than a potentially lower-quality cached response.
+// Any successful provider's result is cached. Bump CACHE_KEY_VERSION whenever
+// the system prompt changes so stale outputs aren't served from the old prompt.
 
 const CACHE_TTL = 6 * 60 * 60; // 6 hours in seconds
+const CACHE_KEY_VERSION = "v2";
 
 function buildCacheKey(url, text) {
   const str = (url || "") + "\n" + (text || "");
   let h = 5381;
   for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-  return "v1:" + String(h >>> 0);
+  return `${CACHE_KEY_VERSION}:` + String(h >>> 0);
 }
 
 async function kvGet(env, key) {
@@ -442,10 +443,8 @@ export default {
 
     const { response, provider, trace } = result;
 
-    // Cache Groq results only (highest quality; others are fallbacks).
-    if (provider === "groq") {
-      await kvSet(env, cacheKey, response);
-    }
+    // Cache any successful provider's result.
+    await kvSet(env, cacheKey, response);
 
     // Return as SSE so the existing client parser (processStream) works unchanged.
     const sseBody = `data: ${JSON.stringify({ choices: [{ delta: { content: response } }] })}\n\ndata: [DONE]\n\n`;

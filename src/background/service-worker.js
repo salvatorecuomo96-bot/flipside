@@ -12,12 +12,26 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_PANEL" });
   } catch (err) {
-    console.warn("[Flipside] no content script on this tab:", err?.message);
+    console.warn("[FlipSide] no content script on this tab:", err?.message);
   }
 });
 
 // --- 2. Analysis requests from the content script -------------------------
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "stream-analyze") {
+    port.onMessage.addListener(async (msg) => {
+      if (msg.type === "ANALYZE") {
+        const res = await handleAnalyze(msg.payload, (partialText) => {
+          port.postMessage({ type: "CHUNK", text: partialText });
+        });
+        port.postMessage({ type: "DONE", result: res });
+      }
+    });
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Legacy non-streaming endpoint
   if (msg?.type === "ANALYZE") {
     handleAnalyze(msg.payload).then(sendResponse);
     return true; // keep channel open for async response
@@ -29,22 +43,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return false;
 });
 
-async function handleAnalyze(payload) {
+async function handleAnalyze(payload, onChunk = null) {
   // Cache first: re-opening the same article (or a different user-key vs proxy
   // run on identical text) returns instantly and spends zero quota. Keyed on a
   // hash of url+text, so an edited article (different text) correctly misses.
   const cacheKey = hashStr((payload.url || "") + "\n" + (payload.text || ""));
   const cached = await cacheGet(cacheKey);
-  if (cached) return { ok: true, data: cached, cached: true };
+  if (cached) {
+    // If we have a cached result, simulate a single chunk with the full text 
+    // to satisfy the streaming UI's expectations before returning DONE.
+    // However, the cached result is already parsed JSON. The UI expects raw JSON strings in CHUNKs.
+    if (onChunk) onChunk(JSON.stringify(cached));
+    return { ok: true, data: cached, cached: true };
+  }
 
   const { apiKey } = await chrome.storage.local.get("apiKey");
 
   try {
     let data;
     if (apiKey) {
-      data = await callDirect({ apiKey, payload });
+      data = await callDirect({ apiKey, payload }, onChunk);
     } else {
-      data = await callProxy(payload);
+      data = await callProxy(payload, onChunk);
     }
     await cacheSet(cacheKey, data); // only successes are cached
     return { ok: true, data };

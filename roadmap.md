@@ -1,4 +1,4 @@
-# Roadmap — Flipside (Autonomous Perspective Engine)
+# Roadmap — FlipSide (Autonomous Perspective Engine)
 
 > Living document. Updated as phases land. Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
@@ -198,7 +198,7 @@ server holds the key. Local/WebLLM path is dead (files to delete listed in Phase
 
 ---
 
-## Phase 6 — Hybrid quality architecture (free proxy default + optional BYOK)  `[ ]`
+## Phase 6 — Hybrid quality architecture (free proxy default + optional BYOK)  `[x]`
 **Goal:** restore the proven 70B-quality output (the OpenRouter screenshot) while keeping
 one-click-on-page and free-to-the-user. Exactly one thing gives vs. the impossible four-way: a
 server runs the big model, so the user needs no GPU and no key by default.
