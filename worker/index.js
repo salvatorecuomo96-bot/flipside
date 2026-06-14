@@ -24,7 +24,7 @@ const GEMINI_ENDPOINT    = "https://generativelanguage.googleapis.com/v1beta/ope
 const OPENROUTER_ENDPOINT= "https://openrouter.ai/api/v1/chat/completions";
 
 const GROQ_MODEL      = "llama-3.3-70b-versatile";
-const CEREBRAS_MODEL  = "llama-3.3-70b";
+const CEREBRAS_MODEL  = "gpt-oss-120b";
 const SAMBANOVA_MODEL = "Meta-Llama-3.3-70B-Instruct";
 const GEMINI_MODEL    = "gemini-2.0-flash";
 const OPENROUTER_MODEL= "meta-llama/llama-3.3-70b-instruct:free";
@@ -301,11 +301,13 @@ const CHAIN = [
 async function generate(env, messages) {
   const errors = [];
 
+  const trace = [];
   for (const { name, fn } of CHAIN) {
     try {
       const response = await fn(env, messages);
-      return { response, provider: name };
+      return { response, provider: name, trace };
     } catch (err) {
+      trace.push(`${name}:${err.kind ?? "?"}`);
       if (!isRecoverable(err)) throw err;
       if (err.kind !== "unconfigured") errors.push(err);
     }
@@ -410,6 +412,7 @@ export default {
           "Content-Type": "text/event-stream",
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "X-Provider": "cache",
         },
       });
     }
@@ -437,7 +440,7 @@ export default {
       return json({ error: err.message ?? "Generation failed." }, 502);
     }
 
-    const { response, provider } = result;
+    const { response, provider, trace } = result;
 
     // Cache Groq results only (highest quality; others are fallbacks).
     if (provider === "groq") {
@@ -451,6 +454,8 @@ export default {
         "Content-Type": "text/event-stream",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "X-Provider": provider,
+        "X-Chain-Trace": (trace || []).join(",") || "none",
       },
     });
   },
