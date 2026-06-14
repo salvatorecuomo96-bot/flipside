@@ -1,4 +1,4 @@
-// Flipside — Cloudflare Worker proxy
+// FlipSide — Cloudflare Worker proxy
 //
 // Accepts POST { title, text, url } from the extension. Builds the prompt
 // server-side and generates a counter-perspective via a PROVIDER CHAIN — each
@@ -33,7 +33,7 @@ const WORKERS_AI_MODEL= "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const MAX_TEXT_CHARS = 12000;
 
 // Keep this byte-identical to src/lib/prompt.js in the extension.
-const SYSTEM_PROMPT = `You are Flipside — a "skeptical mirror" for an article.
+const SYSTEM_PROMPT = `You are FlipSide — a "skeptical mirror" for an article.
 
 YOUR JOB: judge whether a credible, SUBSTANTIVE counter-perspective to the article's central
 thesis exists. If one does, surface the single strongest. If one does NOT, say so plainly.
@@ -125,6 +125,7 @@ function buildMessages({ title, text, url }) {
 
 // kind values:
 //   'unconfigured' — key not present; silently skip this provider
+//   'auth_error'   — invalid key (401/403); fall through, try next provider
 //   'rate_minute'  — per-minute limit; fall through, retry-able
 //   'quota_daily'  — day's budget spent; fall through, try next provider
 //   'transient'    — network/timeout; fall through
@@ -139,6 +140,7 @@ function tag(msg, kind, retryAfter = 0) {
 function isRecoverable(err) {
   return (
     err.kind === "unconfigured" ||
+    err.kind === "auth_error" ||
     err.kind === "rate_minute" ||
     err.kind === "quota_daily" ||
     err.kind === "transient"
@@ -152,7 +154,9 @@ function isRecoverable(err) {
 async function callOpenAICompat({ endpoint, apiKey, model, messages, name, jsonMode = false, extraHeaders = {} }) {
   if (!apiKey) throw tag(`${name} key not configured.`, "unconfigured");
 
-  const body = { model, messages, temperature: 0.2 };
+  const cleanKey = apiKey.trim();
+
+  const body = { model, messages, temperature: 0.2, stream: false };
   if (jsonMode) body.response_format = { type: "json_object" };
 
   let resp;
@@ -160,7 +164,7 @@ async function callOpenAICompat({ endpoint, apiKey, model, messages, name, jsonM
     resp = await fetch(endpoint, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${cleanKey}`,
         "Content-Type": "application/json",
         ...extraHeaders,
       },
@@ -172,8 +176,11 @@ async function callOpenAICompat({ endpoint, apiKey, model, messages, name, jsonM
 
   if (!resp.ok) {
     const detail = await resp.text().catch(() => "");
+    const lower = detail.toLowerCase();
+    if (resp.status === 401 || resp.status === 403) {
+      throw tag(`${name} ${resp.status} (unauthorized).`, "auth_error");
+    }
     if (resp.status === 429) {
-      const lower = detail.toLowerCase();
       const isDaily =
         lower.includes("per day") ||
         lower.includes("(rpd)") ||
@@ -185,10 +192,21 @@ async function callOpenAICompat({ endpoint, apiKey, model, messages, name, jsonM
       const m = detail.match(/try again in ([\d.]+)s/i);
       throw tag(`${name} rate limit.`, "rate_minute", m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60);
     }
-    throw tag(`${name} ${resp.status}.`, "other");
+    if (resp.status === 400 && lower.includes("valid api key")) {
+      throw tag(`${name} key not configured or invalid.`, "unconfigured");
+    }
+    if (resp.status === 404 && (lower.includes("model") || lower.includes("not found"))) {
+      throw tag(`${name} model not found or unavailable.`, "unconfigured");
+    }
+    throw tag(`${name} ${resp.status}: ${detail.slice(0, 200)}`, "other");
   }
 
-  const data = await resp.json();
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    throw tag(`${name} returned non-JSON response.`, "transient");
+  }
   return data?.choices?.[0]?.message?.content ?? "";
 }
 
@@ -253,7 +271,7 @@ async function callWorkersAI(env, messages) {
 
   let out;
   try {
-    out = await env.AI.run(WORKERS_AI_MODEL, { messages, temperature: 0.2 });
+    out = await env.AI.run(WORKERS_AI_MODEL, { messages, temperature: 0.2, stream: false });
   } catch (err) {
     const msg = (err?.message ?? "").toLowerCase();
     if (msg.includes("quota") || msg.includes("exceeded") || msg.includes("limit")) {
@@ -278,15 +296,15 @@ const CHAIN = [
   { name: "workersai", fn: callWorkersAI },
 ];
 
-// Returns { content, provider } — provider name is used by the caller to decide
-// whether to cache (only Groq results are cached; see below).
+// Returns { response, provider } — provider name is used by the caller to decide
+// whether to cache.
 async function generate(env, messages) {
   const errors = [];
 
   for (const { name, fn } of CHAIN) {
     try {
-      const content = await fn(env, messages);
-      return { content, provider: name };
+      const response = await fn(env, messages);
+      return { response, provider: name };
     } catch (err) {
       if (!isRecoverable(err)) throw err;
       if (err.kind !== "unconfigured") errors.push(err);
@@ -333,6 +351,17 @@ async function kvSet(env, key, value) {
 
 export default {
   async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Max-Age": "86400",
+        },
+      });
+    }
+
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
     }
@@ -371,12 +400,19 @@ export default {
 
     const messages = buildMessages({ title, text, url });
 
-    // Cache check — KV hit returns instantly and spends zero provider quota.
-    // Popular articles (viral news, trending pieces) are effectively served free
-    // after the first request. TTL is 6h so results stay reasonably fresh.
+    // KV cache check — skip generation entirely for recently-seen articles.
     const cacheKey = buildCacheKey(url, text);
     const cached = await kvGet(env, cacheKey);
-    if (cached) return json({ content: cached });
+    if (cached) {
+      const sseBody = `data: ${JSON.stringify({ choices: [{ delta: { content: cached } }] })}\n\ndata: [DONE]\n\n`;
+      return new Response(sseBody, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+        },
+      });
+    }
 
     let result;
     try {
@@ -401,16 +437,22 @@ export default {
       return json({ error: err.message ?? "Generation failed." }, 502);
     }
 
-    const { content, provider } = result;
+    const { response, provider } = result;
 
-    // Only cache Groq results. Fallback provider results are not cached so a
-    // rate-limited first-user can't lock in a lower-quality response for everyone
-    // else for 6 hours.
+    // Cache Groq results only (highest quality; others are fallbacks).
     if (provider === "groq") {
-      await kvSet(env, cacheKey, content);
+      await kvSet(env, cacheKey, response);
     }
 
-    return json({ content });
+    // Return as SSE so the existing client parser (processStream) works unchanged.
+    const sseBody = `data: ${JSON.stringify({ choices: [{ delta: { content: response } }] })}\n\ndata: [DONE]\n\n`;
+    return new Response(sseBody, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+      },
+    });
   },
 };
 
