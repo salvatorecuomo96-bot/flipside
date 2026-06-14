@@ -208,7 +208,9 @@ async function callOpenAICompat({ endpoint, apiKey, model, messages, name, jsonM
   } catch {
     throw tag(`${name} returned non-JSON response.`, "transient");
   }
-  return data?.choices?.[0]?.message?.content ?? "";
+  const content = data?.choices?.[0]?.message?.content ?? "";
+  if (!content.trim()) throw tag(`${name} returned empty content.`, "transient");
+  return content;
 }
 
 // --- Per-provider wrappers ---------------------------------------------------
@@ -399,6 +401,9 @@ export default {
 
     if (typeof text !== "string" || text.length > MAX_TEXT_CHARS) {
       return json({ error: "Article text too long." }, 400);
+    }
+    if (text.trim().length < 10) {
+      return json({ error: "No article text found." }, 400);
     }
 
     const messages = buildMessages({ title, text, url });

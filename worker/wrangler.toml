@@ -22,9 +22,9 @@ simple = { limit = 15, period = 60 }
 [ai]
 binding = "AI"
 
-# KV cache — stores Groq results keyed by hash(url+text), TTL 6h.
-# Only Groq results are cached (high quality); fallback provider results are not,
-# so a rate-limited first-request can't poison the cache for everyone else.
+# KV cache — stores results keyed by hash(url+text), TTL 6h.
+# Any successful provider's result is cached. Bump CACHE_KEY_VERSION in index.js
+# whenever the system prompt changes to invalidate stale cached outputs.
 [[kv_namespaces]]
 binding = "CACHE"
 id = "39c459bbb2444bf585c688c091c1264c"
