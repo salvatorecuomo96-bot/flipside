@@ -7,7 +7,7 @@
 //
 // Current chain (tried in order):
 //   1. Groq         — Llama 3.3 70B, fast, JSON mode.       Secret: GROQ_API_KEY
-//   2. Cerebras     — Llama 3.3 70B, very fast.             Secret: CEREBRAS_API_KEY
+//   2. Cerebras     — gpt-oss-120b, very fast.               Secret: CEREBRAS_API_KEY
 //   3. SambaNova    — Llama 3.3 70B, generous free tier.    Secret: SAMBANOVA_API_KEY
 //   4. Google Gemini— Gemini 2.0 Flash, 1,500 req/day free. Secret: GEMINI_API_KEY
 //   5. OpenRouter   — Llama 3.3 70B free model.             Secret: OPENROUTER_API_KEY
