@@ -65,12 +65,11 @@ FlipSide has one purpose: when the user clicks its toolbar button on an article,
 - **Used for purposes unrelated to the core function?** No.
 - **Used to determine creditworthiness / lending?** No.
 
-Privacy policy URL: https://raw.githubusercontent.com/salvatorecuomo96-bot/counterargumentbot/main/store/PRIVACY.md
-(requires repo to be public on GitHub — go to Settings → Danger Zone → Change visibility → Public)
+Privacy policy URL: https://raw.githubusercontent.com/salvatorecuomo96-bot/flipside/main/store/PRIVACY.md
 
 ---
 
 ## Assets still needed before submitting
 - [ ] At least 1 screenshot, 1280×800 or 640×400 (PNG/JPEG). Recommended: the panel open over a real article.
 - [ ] Small promo tile 440×280 (optional but recommended).
-- [ ] Make the GitHub repo public (Settings → Danger Zone → Change visibility → Public), then the privacy policy URL above becomes live automatically.
+- [x] Repo is public at https://github.com/salvatorecuomo96-bot/flipside — privacy policy URL is live.
