@@ -96,11 +96,19 @@ async function handleToggle() {
   }
   if (!panel.isOpen()) panel.open();
 
-  // Show the spinner immediately so the user sees feedback, then retry
-  // extraction — clicking right after page load may catch the DOM before
-  // article content has fully rendered, so we wait up to ~1.5s before giving up.
+  // Show the spinner immediately, then try extraction. Heavy JS pages (Euractiv,
+  // Bloomberg, etc.) can take 2-4s to render the article body. Fast pass tries
+  // every 500ms for 1.5s; if that fails we keep the spinner and retry slowly
+  // for up to 4s more before showing an error.
   panel.renderLoading();
-  const extraction = await extractWithRetry();
+  let extraction = await extractWithRetry();
+  if (!extraction) {
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      extraction = await extractWithRetry();
+      if (extraction) break;
+    }
+  }
   if (!extraction) {
     panel.renderError("Couldn't find a readable article on this page.");
     return;
