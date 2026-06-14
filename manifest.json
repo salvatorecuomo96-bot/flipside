@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Flipside",
+  "name": "FlipSide",
   "version": "0.2.0",
   "description": "A skeptical mirror for web content. Surfaces the strongest credible counter-perspective when one exists.",
   "permissions": ["activeTab", "storage"],
@@ -13,17 +13,18 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Show counter-perspective",
+    "default_title": "FlipSide — show counter-perspective",
     "default_icon": {
-      "16": "icons/icon-16.png",
-      "48": "icons/icon-48.png",
-      "128": "icons/icon-128.png"
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
     }
   },
   "icons": {
-    "16": "icons/icon-16.png",
-    "48": "icons/icon-48.png",
-    "128": "icons/icon-128.png"
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "options_ui": {
     "page": "src/options/options.html",
