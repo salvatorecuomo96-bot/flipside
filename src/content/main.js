@@ -21,6 +21,15 @@ export function init() {
   lastHash = lastExtraction ? hashText(lastExtraction.text) : "";
   setupMutationObserver();
 
+  chrome.runtime.sendMessage({ type: "PAGE_LOADED", url: location.href }).catch(() => {});
+
+  if (lastExtraction?.text.length >= 200) {
+    chrome.runtime.sendMessage({
+      type: "PREANALYZE",
+      payload: { title: lastExtraction.title, text: lastExtraction.text, url: location.href },
+    }).catch(() => {});
+  }
+
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "TOGGLE_PANEL") handleToggle();
   });

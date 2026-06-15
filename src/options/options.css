@@ -39,6 +39,10 @@ button.secondary {
   border: 1px solid var(--border); font-weight: 400;
 }
 .status { font-size: 13px; color: var(--muted); margin: 12px 0 0; min-height: 1.4em; }
+.preanalyze-section { margin-top: 20px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.toggle-label { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.toggle-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: #84a584; cursor: pointer; flex-shrink: 0; }
+.preanalyze-section .hint { margin-top: 8px; }
 .privacy { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); }
 .privacy h2 { font-size: 13px; margin: 0 0 6px; }
 .privacy p { font-size: 12px; line-height: 1.6; color: var(--muted); margin: 0; }

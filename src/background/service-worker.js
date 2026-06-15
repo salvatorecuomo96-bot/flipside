@@ -19,18 +19,97 @@ chrome.action.onClicked.addListener(async (tab) => {
 // --- 2. Analysis requests from the content script -------------------------
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === "stream-analyze") {
+    const tabId = port.sender?.tab?.id ?? null;
     port.onMessage.addListener(async (msg) => {
       if (msg.type === "ANALYZE") {
+        if (tabId) clearDot(tabId);
         const res = await handleAnalyze(msg.payload, (partialText) => {
           port.postMessage({ type: "CHUNK", text: partialText });
         });
         port.postMessage({ type: "DONE", result: res });
+        setBadge(tabId, res);
+        if (res.ok && msg.payload?.url) {
+          await saveBadgeState(msg.payload.url, res.data?.counter?.found === true ? "found" : "notfound");
+        }
       }
     });
   }
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// Clear the dot when the user navigates — stale state would be misleading.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") clearDot(tabId);
+});
+
+function setBadge(tabId, res) {
+  if (!tabId) return;
+  if (res.ok && res.data?.counter?.found === true) {
+    applyDot(tabId, "#22c55e");
+  } else if (res.ok && res.data?.counter?.found === false) {
+    applyDot(tabId, "#ef4444");
+  } else {
+    clearDot(tabId);
+  }
+}
+
+function restoreBadge(tabId, state) {
+  if (!tabId || !state) return;
+  if (state === "found") applyDot(tabId, "#22c55e");
+  else if (state === "notfound") applyDot(tabId, "#ef4444");
+}
+
+async function applyDot(tabId, color) {
+  try {
+    const bitmap = await createImageBitmap(
+      await (await fetch(chrome.runtime.getURL("icons/icon32.png"))).blob()
+    );
+    const canvas = new OffscreenCanvas(32, 32);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, 32, 32);
+    ctx.beginPath();
+    ctx.arc(25, 25, 7, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    const imageData = ctx.getImageData(0, 0, 32, 32);
+    await chrome.action.setIcon({ imageData: { 32: imageData }, tabId });
+  } catch (e) {
+    console.warn("[FlipSide] applyDot failed:", e);
+  }
+}
+
+function clearDot(tabId) {
+  chrome.action.setIcon({
+    path: { 16: "icons/icon16.png", 32: "icons/icon32.png", 48: "icons/icon48.png" },
+    tabId,
+  }).catch(() => {});
+}
+
+// --- Badge state cache (chrome.storage.local) -----------------------------
+const BADGE_CACHE_KEY = "badgeCache";
+const BADGE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+
+async function saveBadgeState(url, state) {
+  const store = (await chrome.storage.local.get(BADGE_CACHE_KEY))[BADGE_CACHE_KEY] || {};
+  store[url] = { state, ts: Date.now() };
+  const keys = Object.keys(store);
+  if (keys.length > 500) {
+    keys.sort((a, b) => store[a].ts - store[b].ts);
+    for (const k of keys.slice(0, keys.length - 500)) delete store[k];
+  }
+  await chrome.storage.local.set({ [BADGE_CACHE_KEY]: store });
+}
+
+async function getBadgeState(url) {
+  const store = (await chrome.storage.local.get(BADGE_CACHE_KEY))[BADGE_CACHE_KEY] || {};
+  const entry = store[url];
+  if (!entry || Date.now() - entry.ts > BADGE_TTL_MS) return null;
+  return entry.state;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Legacy non-streaming endpoint
   if (msg?.type === "ANALYZE") {
     handleAnalyze(msg.payload).then(sendResponse);
@@ -38,6 +117,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg?.type === "OPEN_OPTIONS") {
     chrome.runtime.openOptionsPage();
+    return false;
+  }
+  if (msg?.type === "PAGE_LOADED") {
+    const tabId = sender.tab?.id ?? null;
+    if (tabId && msg.url) {
+      getBadgeState(msg.url).then((state) => restoreBadge(tabId, state));
+    }
+    return false;
+  }
+  if (msg?.type === "PREANALYZE") {
+    const tabId = sender.tab?.id ?? null;
+    const url = msg.payload?.url;
+    if (!tabId || !url) return false;
+    chrome.storage.local.get(["apiKey", "preanalyzeEnabled"]).then(async ({ apiKey, preanalyzeEnabled }) => {
+      if (apiKey && preanalyzeEnabled === false) return; // user opted out
+      const existing = await getBadgeState(url);
+      if (existing) return; // badge already cached — PAGE_LOADED already restored it
+      const res = await handleAnalyze(msg.payload);
+      setBadge(tabId, res);
+      if (res.ok) {
+        await saveBadgeState(url, res.data?.counter?.found === true ? "found" : "notfound");
+      }
+    });
     return false;
   }
   return false;

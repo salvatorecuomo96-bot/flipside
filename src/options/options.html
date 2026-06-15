@@ -26,13 +26,20 @@
 
   <p id="status" class="status"></p>
 
+  <section id="preanalyze-section" class="preanalyze-section" hidden>
+    <label class="toggle-label">
+      <input type="checkbox" id="preanalyze" />
+      Auto-analyze articles as you browse
+    </label>
+    <p class="hint">When on, FlipSide silently analyzes each article you open and sets the badge before you click — using your key on every page load. Turn off to only use your key when you click the button.</p>
+  </section>
+
   <section class="privacy">
     <h2>Privacy</h2>
-    <p>Nothing is sent when you open a page. <strong>Only when you click the FlipSide button</strong>,
-      the current article's title, URL, and text are sent to the analysis service — a hosted proxy by
-      default, or directly to Groq if you've added your own key — solely to generate the
-      counter-perspective. No account is required and no personal data is collected. Your optional
-      Groq key is stored only on this device (<code>chrome.storage.local</code>) and is sent only to Groq.</p>
+    <p>On article pages, FlipSide automatically sends the title, URL, and text to the analysis service
+      to set the badge — no click needed. Clicking the button opens the result panel (no extra data sent
+      if already analyzed). Non-article pages are never analyzed. Your optional API key is stored only
+      on this device (<code>chrome.storage.local</code>) and sent only to Groq — never to FlipSide's proxy.</p>
   </section>
 
   <script src="options.js"></script>
