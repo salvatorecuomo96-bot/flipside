@@ -146,17 +146,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 async function handleAnalyze(payload, onChunk = null) {
-  // Cache first: re-opening the same article (or a different user-key vs proxy
-  // run on identical text) returns instantly and spends zero quota. Keyed on a
-  // hash of url+text, so an edited article (different text) correctly misses.
   const cacheKey = hashStr((payload.url || "") + "\n" + (payload.text || ""));
+
+  // Primary cache: exact hash(url+text) match.
   const cached = await cacheGet(cacheKey);
   if (cached) {
-    // If we have a cached result, simulate a single chunk with the full text 
-    // to satisfy the streaming UI's expectations before returning DONE.
-    // However, the cached result is already parsed JSON. The UI expects raw JSON strings in CHUNKs.
     if (onChunk) onChunk(JSON.stringify(cached));
     return { ok: true, data: cached, cached: true };
+  }
+
+  // Secondary cache: URL-only match. Catches the case where preanalyze captured
+  // slightly different text than the click-time extractor (late-rendering pages),
+  // producing a different hash but the same article.
+  const urlCached = await urlCacheGet(payload.url);
+  if (urlCached) {
+    if (onChunk) onChunk(JSON.stringify(urlCached));
+    return { ok: true, data: urlCached, cached: true };
   }
 
   const { apiKey } = await chrome.storage.local.get("apiKey");
@@ -168,7 +173,8 @@ async function handleAnalyze(payload, onChunk = null) {
     } else {
       data = await callProxy(payload, onChunk);
     }
-    await cacheSet(cacheKey, data); // only successes are cached
+    await cacheSet(cacheKey, data);
+    await urlCacheSet(payload.url, data);
     return { ok: true, data };
   } catch (err) {
     return {
@@ -204,6 +210,30 @@ async function cacheSet(key, data) {
     for (const k of keys.slice(0, keys.length - CACHE_MAX)) delete store[k];
   }
   await chrome.storage.local.set({ [CACHE_KEY]: store });
+}
+
+// --- URL-keyed result cache -----------------------------------------------
+// Secondary fallback for when preanalyze and click-time text hashes diverge.
+const URL_CACHE_KEY = "urlCache";
+
+async function urlCacheGet(url) {
+  if (!url) return null;
+  const store = (await chrome.storage.local.get(URL_CACHE_KEY))[URL_CACHE_KEY] || {};
+  const entry = store[url];
+  if (!entry || Date.now() - entry.ts > CACHE_TTL_MS) return null;
+  return entry.data;
+}
+
+async function urlCacheSet(url, data) {
+  if (!url) return;
+  const store = (await chrome.storage.local.get(URL_CACHE_KEY))[URL_CACHE_KEY] || {};
+  store[url] = { data, ts: Date.now() };
+  const keys = Object.keys(store);
+  if (keys.length > 200) {
+    keys.sort((a, b) => store[a].ts - store[b].ts);
+    for (const k of keys.slice(0, keys.length - 200)) delete store[k];
+  }
+  await chrome.storage.local.set({ [URL_CACHE_KEY]: store });
 }
 
 // djb2 — fast, non-cryptographic; we only need a stable cache key.

@@ -73,7 +73,10 @@ export async function callDirect({ apiKey, payload }, onChunk) {
       err.retryAfter = m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60;
       throw err;
     }
-    if (resp.status === 401) throw new Error("Invalid Groq API key. Check your key in options.");
+    if (resp.status === 401) {
+      // Invalid key — silently fall back to the shared proxy so the user isn't blocked.
+      return callProxy(payload, onChunk);
+    }
     throw new Error(`Groq error (${resp.status}): ${detail}`);
   }
 

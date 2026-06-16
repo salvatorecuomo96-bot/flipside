@@ -58,6 +58,8 @@ export function extractMainContent(doc) {
   }
 
   const text = normalizeText(best.innerText || best.textContent || "");
+  // Require a minimum score so nav-heavy homepages don't pass as articles.
+  if (bestScore < 20 || text.length < 200) return { title, text: "" };
   return { title, text };
 }
 
