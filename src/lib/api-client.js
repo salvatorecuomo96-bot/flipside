@@ -8,9 +8,16 @@
 import { buildMessages } from "./prompt.js";
 
 const PROXY_URL = "https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev";
-const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
-const TIMEOUT_MS = 30000; // Groq is fast; 30s is generous
+const TIMEOUT_MS = 30000;
+
+const BYOK_PROVIDERS = {
+  groq:       { endpoint: "https://api.groq.com/openai/v1/chat/completions",        model: "llama-3.3-70b-versatile" },
+  deepseek:   { endpoint: "https://api.deepseek.com/v1/chat/completions",           model: "deepseek-chat" },
+  openai:     { endpoint: "https://api.openai.com/v1/chat/completions",             model: "gpt-4o-mini" },
+  openrouter: { endpoint: "https://openrouter.ai/api/v1/chat/completions",          model: "meta-llama/llama-3.3-70b-instruct:free" },
+  cerebras:   { endpoint: "https://api.cerebras.ai/v1/chat/completions",            model: "gpt-oss-120b" },
+  sambanova:  { endpoint: "https://api.sambanova.ai/v1/chat/completions",           model: "Meta-Llama-3.3-70B-Instruct" },
+};
 
 export async function callProxy({ title, text, url }, onChunk) {
   const resp = await fetchWithTimeout(PROXY_URL, {
@@ -43,19 +50,21 @@ export async function callProxy({ title, text, url }, onChunk) {
   return processStream(resp, onChunk);
 }
 
-export async function callDirect({ apiKey, payload }, onChunk) {
-  const resp = await fetchWithTimeout(GROQ_ENDPOINT, {
+export async function callDirect({ apiKey, provider = "groq", payload }, onChunk) {
+  const cfg = BYOK_PROVIDERS[provider] ?? BYOK_PROVIDERS.groq;
+
+  const resp = await fetchWithTimeout(cfg.endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model: cfg.model,
       messages: buildMessages(payload),
       temperature: 0.2,
       response_format: { type: "json_object" },
-      stream: true
+      stream: true,
     }),
   });
 
@@ -64,12 +73,12 @@ export async function callDirect({ apiKey, payload }, onChunk) {
     if (resp.status === 429) {
       const lower = detail.toLowerCase();
       if (lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)")) {
-        const err = new Error("Your Groq key hit today's free limit. It resets at midnight UTC.");
+        const err = new Error("Your API key hit today's limit. It resets at midnight UTC.");
         err.daily = true;
         throw err;
       }
       const m = detail.match(/try again in ([\d.]+)s/i);
-      const err = new Error("Groq rate limit — too many requests this minute.");
+      const err = new Error("Rate limit — too many requests this minute.");
       err.retryAfter = m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60;
       throw err;
     }
@@ -77,7 +86,7 @@ export async function callDirect({ apiKey, payload }, onChunk) {
       // Invalid key — silently fall back to the shared proxy so the user isn't blocked.
       return callProxy(payload, onChunk);
     }
-    throw new Error(`Groq error (${resp.status}): ${detail}`);
+    throw new Error(`${provider} error (${resp.status}): ${detail}`);
   }
 
   return processStream(resp, onChunk);

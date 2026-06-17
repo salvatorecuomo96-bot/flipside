@@ -130,7 +130,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const tabId = sender.tab?.id ?? null;
     const url = msg.payload?.url;
     if (!tabId || !url) return false;
-    chrome.storage.local.get(["apiKey", "preanalyzeEnabled"]).then(async ({ apiKey, preanalyzeEnabled }) => {
+    chrome.storage.local.get(["apiKey", "byokProvider", "preanalyzeEnabled"]).then(async ({ apiKey, byokProvider, preanalyzeEnabled }) => {
       if (apiKey && preanalyzeEnabled === false) return; // user opted out
       const existing = await getBadgeState(url);
       if (existing) return; // badge already cached — PAGE_LOADED already restored it
@@ -164,12 +164,12 @@ async function handleAnalyze(payload, onChunk = null) {
     return { ok: true, data: urlCached, cached: true };
   }
 
-  const { apiKey } = await chrome.storage.local.get("apiKey");
+  const { apiKey, byokProvider } = await chrome.storage.local.get(["apiKey", "byokProvider"]);
 
   try {
     let data;
     if (apiKey) {
-      data = await callDirect({ apiKey, payload }, onChunk);
+      data = await callDirect({ apiKey, provider: byokProvider ?? "groq", payload }, onChunk);
     } else {
       data = await callProxy(payload, onChunk);
     }

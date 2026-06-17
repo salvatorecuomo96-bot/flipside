@@ -1,12 +1,17 @@
 {
   "manifest_version": 3,
   "name": "FlipSide",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A skeptical mirror for web content. Surfaces the strongest credible counter-perspective when one exists.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [
     "https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev/*",
-    "https://api.groq.com/*"
+    "https://api.groq.com/*",
+    "https://api.deepseek.com/*",
+    "https://api.openai.com/*",
+    "https://openrouter.ai/*",
+    "https://api.cerebras.ai/*",
+    "https://api.sambanova.ai/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js",
