@@ -11,12 +11,18 @@ const PROXY_URL = "https://epistemic-companion-proxy.salvatoreducksamurai96.work
 const TIMEOUT_MS = 30000;
 
 const BYOK_PROVIDERS = {
-  groq:       { endpoint: "https://api.groq.com/openai/v1/chat/completions",        model: "llama-3.3-70b-versatile" },
-  deepseek:   { endpoint: "https://api.deepseek.com/v1/chat/completions",           model: "deepseek-chat" },
-  openai:     { endpoint: "https://api.openai.com/v1/chat/completions",             model: "gpt-4o-mini" },
-  openrouter: { endpoint: "https://openrouter.ai/api/v1/chat/completions",          model: "meta-llama/llama-3.3-70b-instruct:free" },
-  cerebras:   { endpoint: "https://api.cerebras.ai/v1/chat/completions",            model: "gpt-oss-120b" },
-  sambanova:  { endpoint: "https://api.sambanova.ai/v1/chat/completions",           model: "Meta-Llama-3.3-70B-Instruct" },
+  groq:       { endpoint: "https://api.groq.com/openai/v1/chat/completions",                          model: "llama-3.3-70b-versatile" },
+  deepseek:   { endpoint: "https://api.deepseek.com/v1/chat/completions",                             model: "deepseek-chat" },
+  openai:     { endpoint: "https://api.openai.com/v1/chat/completions",                               model: "gpt-4o-mini" },
+  openrouter: { endpoint: "https://openrouter.ai/api/v1/chat/completions",                            model: "meta-llama/llama-3.3-70b-instruct:free" },
+  cerebras:   { endpoint: "https://api.cerebras.ai/v1/chat/completions",                              model: "gpt-oss-120b" },
+  sambanova:  { endpoint: "https://api.sambanova.ai/v1/chat/completions",                             model: "Meta-Llama-3.3-70B-Instruct" },
+  gemini:     { endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-2.0-flash" },
+  xai:        { endpoint: "https://api.x.ai/v1/chat/completions",                                     model: "grok-3-mini" },
+  mistral:    { endpoint: "https://api.mistral.ai/v1/chat/completions",                               model: "mistral-small-latest" },
+  perplexity: { endpoint: "https://api.perplexity.ai/chat/completions",                               model: "sonar" },
+  together:   { endpoint: "https://api.together.xyz/v1/chat/completions",                             model: "meta-llama/Llama-3-70b-chat-hf" },
+  fireworks:  { endpoint: "https://api.fireworks.ai/inference/v1/chat/completions",                   model: "accounts/fireworks/models/llama-v3p3-70b-instruct" },
 };
 
 export async function callProxy({ title, text, url }, onChunk) {

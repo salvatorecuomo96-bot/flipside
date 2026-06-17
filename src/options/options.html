@@ -10,22 +10,10 @@
   <p class="sub">FlipSide works out of the box with no setup. Optionally add your own API key for a dedicated personal quota.</p>
 
   <div class="field">
-    <label for="provider">Provider <span class="optional">(optional)</span></label>
-    <select id="provider">
-      <option value="groq">Groq — free tier, no credit card</option>
-      <option value="deepseek">DeepSeek — paid, very cheap</option>
-      <option value="openai">OpenAI — paid (gpt-4o-mini)</option>
-      <option value="openrouter">OpenRouter — free &amp; paid models</option>
-      <option value="cerebras">Cerebras — free tier</option>
-      <option value="sambanova">SambaNova — free tier</option>
-      <option value="anthropic">Anthropic (Claude) — paid</option>
-    </select>
-  </div>
-
-  <div class="field">
     <label for="apiKey">API Key <span class="optional">(optional)</span></label>
-    <input id="apiKey" type="password" placeholder="Paste your API key here..." autocomplete="off" />
-    <p id="key-hint" class="hint"></p>
+    <input id="apiKey" type="password" placeholder="Paste any API key — provider is detected automatically" autocomplete="off" />
+    <p id="detected" class="detected" hidden></p>
+    <p class="hint">Supports Groq, OpenAI, Anthropic, Gemini, Grok, DeepSeek, Mistral, Perplexity, OpenRouter, Cerebras, SambaNova, Together AI and Fireworks — provider is detected automatically from your key.</p>
   </div>
 
   <div class="actions">
@@ -46,7 +34,7 @@
   <section class="privacy">
     <h2>Privacy</h2>
     <p>On article pages, FlipSide automatically sends the title, URL, and text to the analysis service to set the badge. Clicking the button opens the result panel — if already analyzed, nothing extra is sent. Non-article pages are never analyzed. No account is required and no personal data is collected.</p>
-    <p style="margin-top:10px;">Your API key is stored <strong>only on this device</strong> using <code>chrome.storage.local</code>. It is never sent to FlipSide's servers or shared with anyone. When you use your own key, your article data goes directly to the provider you selected — bypassing the shared proxy entirely. You can remove it at any time with the Clear key button above.</p>
+    <p style="margin-top:10px;">Your API key is stored <strong>only on this device</strong> using <code>chrome.storage.local</code>. It is never sent to FlipSide's servers or shared with anyone. When you use your own key, your article data goes directly to the provider — bypassing the shared proxy entirely. You can remove it at any time with the Clear key button above.</p>
   </section>
 
   <script src="options.js"></script>
