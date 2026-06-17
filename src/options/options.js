@@ -5,6 +5,7 @@ const PROVIDER_HINTS = {
   openrouter: 'Free and paid models available. Get a key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai</a>.',
   cerebras:   'Free tier available. Get a key at <a href="https://cloud.cerebras.ai" target="_blank" rel="noopener">cloud.cerebras.ai</a>.',
   sambanova:  'Free tier available. Get a key at <a href="https://cloud.sambanova.ai" target="_blank" rel="noopener">cloud.sambanova.ai</a>.',
+  anthropic:  'Paid. Uses Claude Haiku (fast and cheap). Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>.',
 };
 
 const els = {

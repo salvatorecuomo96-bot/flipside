@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FlipSide",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "A skeptical mirror for web content. Surfaces the strongest credible counter-perspective when one exists.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [
@@ -11,7 +11,8 @@
     "https://api.openai.com/*",
     "https://openrouter.ai/*",
     "https://api.cerebras.ai/*",
-    "https://api.sambanova.ai/*"
+    "https://api.sambanova.ai/*",
+    "https://api.anthropic.com/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js",

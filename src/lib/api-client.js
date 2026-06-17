@@ -51,6 +51,8 @@ export async function callProxy({ title, text, url }, onChunk) {
 }
 
 export async function callDirect({ apiKey, provider = "groq", payload }, onChunk) {
+  if (provider === "anthropic") return callAnthropic(apiKey, payload, onChunk);
+
   const cfg = BYOK_PROVIDERS[provider] ?? BYOK_PROVIDERS.groq;
 
   const resp = await fetchWithTimeout(cfg.endpoint, {
@@ -90,6 +92,66 @@ export async function callDirect({ apiKey, provider = "groq", payload }, onChunk
   }
 
   return processStream(resp, onChunk);
+}
+
+async function callAnthropic(apiKey, payload, onChunk) {
+  const all = buildMessages(payload);
+  const system = all.find(m => m.role === "system")?.content ?? "";
+  const messages = all.filter(m => m.role !== "system");
+
+  const resp = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      system,
+      messages,
+      stream: true,
+    }),
+  });
+
+  if (!resp.ok) {
+    if (resp.status === 401) return callProxy(payload, onChunk);
+    if (resp.status === 429) {
+      const err = new Error("Anthropic rate limit — too many requests.");
+      err.retryAfter = 60;
+      throw err;
+    }
+    const detail = await safeErrorText(resp);
+    throw new Error(`Anthropic error (${resp.status}): ${detail}`);
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
+          fullText += data.delta.text ?? "";
+          if (onChunk) onChunk(fullText);
+        }
+      } catch {}
+    }
+  }
+
+  if (onChunk) onChunk(fullText);
+  return parsePerspective(fullText);
 }
 
 async function processStream(resp, onChunk) {
