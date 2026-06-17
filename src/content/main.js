@@ -133,7 +133,7 @@ async function handleToggle() {
     else panel.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
   } catch (err) {
     if (err?.message === "client-timeout") {
-      panel.renderError("Timed out. The model is still generating — close and try again.");
+      panel.renderError("All AI providers are busy right now. Wait a moment and try again.");
     } else {
       panel.renderError("Couldn't reach the background service. Try reloading the page.");
     }

@@ -138,7 +138,7 @@ async function fetchWithTimeout(url, options) {
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (err) {
-    if (err.name === "AbortError") throw new Error("Request timed out. Try again.");
+    if (err.name === "AbortError") throw new Error("All AI providers are busy right now. Wait a moment and try again.");
     throw err;
   } finally {
     clearTimeout(timer);
