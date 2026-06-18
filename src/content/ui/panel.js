@@ -62,53 +62,14 @@ export function mountPanel(onAnalyze) {
       clearCountdown();
       host.style.display = "none";
     },
-    renderLoading() {
+    renderLoading(stage) {
       inErrorState = false;
       clearCountdown();
       body.innerHTML = `
         <div class="ec-state ec-loading">
           <div class="ec-spinner" aria-hidden="true"></div>
-          <p>Finding the strongest counter-perspective…</p>
+          <p>${escapeHtml(stage || "Analyzing…")}</p>
         </div>`;
-    },
-    renderPartial(text) {
-      inErrorState = false;
-      clearCountdown();
-
-      if (text.includes('"found":false') || text.includes('"found": false')) {
-        body.innerHTML = `
-          <section class="ec-section">
-            <p class="ec-label">Counter-perspective</p>
-            <p class="ec-none-msg">No credible counter-evidence found.</p>
-          </section>`;
-        return;
-      }
-
-      const matchP = text.match(/"perspective"\s*:\s*"((?:[^"\\]|\\.)*)/);
-      let p = matchP ? matchP[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\') : "";
-      
-      const matchR = text.match(/"reasoning"\s*:\s*"((?:[^"\\]|\\.)*)/);
-      let r = matchR ? matchR[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\') : "";
-
-      if (p || r) {
-        const allParas = [p, ...(r ? r.split(/\n\n+/) : [])].map(x => x.trim()).filter(Boolean);
-        const perspectiveHtml = allParas.map((x, i) => {
-          const isLast = i === allParas.length - 1;
-          return `<p class="ec-perspective">${escapeHtml(x)}${isLast ? '<span class="ec-cursor"></span>' : ''}</p>`;
-        }).join("");
-        
-        body.innerHTML = `
-          <section class="ec-section">
-            <p class="ec-label">Strongest counter-perspective</p>
-            ${perspectiveHtml}
-          </section>`;
-      } else {
-        body.innerHTML = `
-          <div class="ec-state ec-loading">
-            <div class="ec-spinner" aria-hidden="true"></div>
-            <p>Analyzing core claims…</p>
-          </div>`;
-      }
     },
     renderError(message, retryAfter = 0, daily = false) {
       inErrorState = true;
@@ -190,10 +151,22 @@ export function mountPanel(onAnalyze) {
 }
 
 function renderResultHtml(data) {
-  const claims = Array.isArray(data?.claims) ? data.claims : [];
-  const counter = data?.counter ?? {};
-  const found = counter.found === true;
+  const type = data?.result_type;
 
+  // NONE — confident silence. No links, no hedging.
+  if (type !== "counter_perspective" && type !== "additional_context") {
+    return `
+      <section class="ec-section">
+        <p class="ec-label">FlipSide</p>
+        <p class="ec-none-msg">No credible counter-perspective or material context found.</p>
+      </section>`;
+  }
+
+  const isCounter = type === "counter_perspective";
+  const label = isCounter ? "Counter-perspective" : "Additional context";
+  const labelClass = isCounter ? "ec-label-counter" : "ec-label-context";
+
+  const claims = Array.isArray(data?.core_claims) ? data.core_claims : [];
   const claimsHtml = claims.length
     ? `<section class="ec-section">
          <p class="ec-label">Core claims</p>
@@ -201,17 +174,26 @@ function renderResultHtml(data) {
        </section>`
     : "";
 
-  if (!found) {
-    return `
-      ${claimsHtml}
-      <section class="ec-section">
-        <p class="ec-label">Counter-perspective</p>
-        <p class="ec-none-msg">No credible counter-evidence found.</p>
-      </section>`;
-  }
+  const headlineHtml = data.headline
+    ? `<p class="ec-headline">${escapeHtml(data.headline)}</p>` : "";
+  const summaryHtml = data.summary
+    ? `<p class="ec-perspective">${escapeHtml(data.summary)}</p>` : "";
 
-  const sources = Array.isArray(counter.sources) ? counter.sources : [];
+  const conf = typeof data.confidence === "number" ? data.confidence : null;
+  const confHtml = conf != null ? `<span class="ec-conf">${confidenceLabel(conf)}</span>` : "";
+
+  const sources = Array.isArray(data.sources) ? data.sources : [];
   const sourcesHtml = sources.length
+    ? `<div class="ec-sources">
+         <p class="ec-label">Sources <span class="ec-src-count">${sources.length}</span></p>
+         <ul class="ec-sources-list open">
+           ${sources.map((s) => `<li>${renderSource(s)}</li>`).join("")}
+         </ul>
+       </div>`
+    : "";
+
+  const further = Array.isArray(data.furtherReading) ? data.furtherReading : [];
+  const furtherHtml = further.length
     ? `<div class="ec-sources">
          <button class="ec-sources-toggle" aria-expanded="false" onclick="
            var btn=this, list=this.nextElementSibling;
@@ -219,26 +201,58 @@ function renderResultHtml(data) {
            btn.setAttribute('aria-expanded', open ? 'false' : 'true');
            list.classList.toggle('open', !open);
          ">
-           <i class="ec-toggle-arrow">▶</i> Evidence &amp; sources
+           <i class="ec-toggle-arrow">▶</i> Further reading
          </button>
          <ul class="ec-sources-list">
-           ${sources.map((s) => `<li>${linkifySource(s)}</li>`).join("")}
+           ${further.map((s) => `<li>${renderSource(s)}</li>`).join("")}
          </ul>
        </div>`
     : "";
 
-  // Perspective + reasoning merged into one flowing block — no sub-label.
-  const allParas = [counter.perspective ?? "", ...(counter.reasoning ? counter.reasoning.split(/\n\n+/) : [])]
-    .map((p) => p.trim()).filter(Boolean);
-  const perspectiveHtml = allParas.map((p) => `<p class="ec-perspective">${escapeHtml(p)}</p>`).join("");
-
   return `
     ${claimsHtml}
     <section class="ec-section">
-      <p class="ec-label">Strongest counter-perspective</p>
-      ${perspectiveHtml}
+      <p class="ec-label ${labelClass}">${label} ${confHtml}</p>
+      ${headlineHtml}
+      ${summaryHtml}
       ${sourcesHtml}
+      ${furtherHtml}
     </section>`;
+}
+
+function confidenceLabel(c) {
+  if (c >= 0.85) return "High confidence";
+  if (c >= 0.7) return "Medium-high confidence";
+  if (c >= 0.5) return "Medium confidence";
+  return "Low confidence";
+}
+
+// Renders one source. New results are objects with a real, fetched URL
+// ({ title, url, publisher, kind }); legacy/cached results may still be plain
+// strings, which fall back to the old linkifier.
+function renderSource(s) {
+  if (typeof s === "string") return linkifySource(s);
+  if (!s || !s.url) return "";
+
+  const title = escapeHtml(s.title || s.url);
+  const url = escapeHtml(s.url);
+  const pub = escapeHtml(s.publisher || "");
+  const kind = String(s.kind || "");
+  const kindLabel =
+    kind === "academic" ? "Academic" :
+    kind === "preprint" ? "Preprint" :
+    kind === "government" ? "Government" :
+    kind === "legal" ? "Legal" :
+    kind === "news" ? "News" :
+    kind === "reference" ? "Reference" : "";
+
+  const kindHtml = kindLabel
+    ? `<span class="ec-src-kind ec-kind-${escapeHtml(kind)}">${kindLabel}</span>`
+    : "";
+  const metaText = [kindHtml, pub].filter(Boolean).join(" · ");
+  const metaHtml = metaText ? `<span class="ec-src-meta">${metaText}</span>` : "";
+
+  return `<a class="ec-src-link" href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>${metaHtml}`;
 }
 
 // Turns a source string into a clickable link.
@@ -505,7 +519,7 @@ const TEMPLATE = `
     .ec-sources-list.open { display: flex; }
     .ec-sources-list li {
       font-size: 13px;
-      line-height: 1.65;
+      line-height: 1.5;
     }
     .ec-sources-list a {
       text-decoration: none;
@@ -513,12 +527,60 @@ const TEMPLATE = `
       display: block;
     }
     .ec-sources-list a:hover { text-decoration: underline; }
-    /* both link types use accent color — same visual weight */
+    /* real, fetched links */
+    .ec-src-link { color: var(--ec-accent); font-weight: 500; }
+    /* legacy string sources */
     .ec-src-direct,
     .ec-src-search { color: var(--ec-accent); }
     .ec-src-search::before {
       content: '↗ ';
       font-size: 11px;
+    }
+    .ec-src-meta {
+      display: block;
+      margin-top: 1px;
+      font-size: 11px;
+      color: var(--ec-muted);
+    }
+    .ec-src-kind {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      padding: 1px 5px;
+      border-radius: 4px;
+      vertical-align: 1px;
+    }
+    .ec-kind-academic   { color: #a78bfa; background: rgba(167,139,250,0.13); }
+    .ec-kind-preprint   { color: #c4b5fd; background: rgba(167,139,250,0.10); }
+    .ec-kind-government { color: #fbbf24; background: rgba(251,191,36,0.13); }
+    .ec-kind-legal      { color: #f0abfc; background: rgba(240,171,252,0.13); }
+    .ec-kind-news       { color: var(--ec-accent); background: rgba(91,142,240,0.13); }
+    .ec-kind-reference  { color: var(--ec-green); background: rgba(52,211,153,0.13); }
+    .ec-src-count {
+      color: var(--ec-muted); font-weight: 700;
+    }
+
+    /* ── Result headline + confidence ── */
+    .ec-headline {
+      margin: 0 0 8px;
+      font-size: 14.5px;
+      font-weight: 650;
+      line-height: 1.4;
+      color: var(--ec-text);
+    }
+    .ec-label-counter { color: var(--ec-green); }
+    .ec-label-counter::after { background: var(--ec-green); opacity: 0.25; }
+    .ec-label-context { color: var(--ec-accent); }
+    .ec-label-context::after { background: var(--ec-accent); opacity: 0.25; }
+    .ec-conf {
+      order: 3;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      color: var(--ec-muted);
+      text-transform: none;
+      white-space: nowrap;
     }
 
     /* ── States ── */

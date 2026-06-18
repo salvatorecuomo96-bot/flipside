@@ -69,8 +69,8 @@ function streamAnalyze(payload, panel) {
     }, 35000);
 
     port.onMessage.addListener((msg) => {
-      if (msg.type === "CHUNK") {
-        if (panel && panel.renderPartial) panel.renderPartial(msg.text);
+      if (msg.type === "STAGE") {
+        if (panel && panel.renderLoading) panel.renderLoading(msg.text);
       } else if (msg.type === "DONE") {
         resolved = true;
         clearTimeout(timeout);

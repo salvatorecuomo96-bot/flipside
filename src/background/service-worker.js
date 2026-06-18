@@ -1,68 +1,73 @@
-// service-worker.js — the extension's privileged, event-driven brain.
+// service-worker.js — the two-call research pipeline orchestrator.
 //
-// Two jobs:
-//   1. Turn a toolbar-button click into a "toggle the panel" message to the page.
-//   2. Route ANALYZE requests: direct to Groq if the user has a key, else via proxy.
+//   1. classify   (model)  — analyzable? core claim? what to search for?
+//   2. fetchSources (code) — real evidence (abstracts) from credible DBs
+//   3. synthesize (model)  — grounded result, citing only provided evidence
+//   4. validate   (code)   — drop any cited source whose quote isn't really
+//                            in its abstract (anti-hallucination provenance gate)
+//
+// Badge: green = counter-perspective, blue = additional context (both only when
+// confidence ≥ THRESHOLD). No dot for "none" — silence is the honest default.
 
-import { callProxy, callDirect } from "../lib/api-client.js";
+import { classify, synthesize } from "../lib/api-client.js";
+import { fetchSources } from "../lib/sources.js";
 
-// --- 1. Toolbar click -> tell the active tab to toggle its panel ----------
+const CONF_THRESHOLD = 0.7;
+const CLAIM_THRESHOLD = 0.4; // min claim_strength to show the neutral "claim here" dot
+const COLOR_COUNTER = "#22c55e"; // green  — counter-perspective found
+const COLOR_CONTEXT = "#3b82f6"; // blue   — additional context found
+const COLOR_NEUTRAL = "#9ca3af"; // gray   — analyzable claim detected (pre-click)
+
+// --- Toolbar click -> toggle the panel ----------
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
-  try {
-    await chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_PANEL" });
-  } catch (err) {
-    console.warn("[FlipSide] no content script on this tab:", err?.message);
-  }
+  try { await chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_PANEL" }); }
+  catch (err) { console.warn("[FlipSide] no content script:", err?.message); }
 });
 
-// --- 2. Analysis requests from the content script -------------------------
+// --- Streaming-style port: drives stage messages then DONE ----------
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name === "stream-analyze") {
-    const tabId = port.sender?.tab?.id ?? null;
-    port.onMessage.addListener(async (msg) => {
-      if (msg.type === "ANALYZE") {
-        if (tabId) clearDot(tabId);
-        const res = await handleAnalyze(msg.payload, (partialText) => {
-          port.postMessage({ type: "CHUNK", text: partialText });
-        });
-        port.postMessage({ type: "DONE", result: res });
-        setBadge(tabId, res);
-        if (res.ok && msg.payload?.url) {
-          await saveBadgeState(msg.payload.url, res.data?.counter?.found === true ? "found" : "notfound");
-        }
-      }
-    });
-  }
+  if (port.name !== "stream-analyze") return;
+  const tabId = port.sender?.tab?.id ?? null;
+  port.onMessage.addListener(async (msg) => {
+    if (msg.type !== "ANALYZE") return;
+    if (tabId) clearDot(tabId);
+    const res = await handleAnalyze(msg.payload, (stage) => port.postMessage({ type: "STAGE", text: stage }));
+    port.postMessage({ type: "DONE", result: res });
+    setBadge(tabId, res);
+    if (res.ok && msg.payload?.url) await saveBadgeState(msg.payload.url, badgeState(res.data));
+  });
 });
 
-// Clear the dot when the user navigates — stale state would be misleading.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") clearDot(tabId);
 });
 
+// --- Badge ----------
+function badgeState(data) {
+  if (!data || data.result_type === "none") return "none";
+  if ((data.confidence ?? 0) < CONF_THRESHOLD) return "none";
+  return data.result_type === "counter_perspective" ? "counter" : "context";
+}
+
 function setBadge(tabId, res) {
   if (!tabId) return;
-  if (res.ok && res.data?.counter?.found === true) {
-    applyDot(tabId, "#22c55e");
-  } else if (res.ok && res.data?.counter?.found === false) {
-    applyDot(tabId, "#ef4444");
-  } else {
-    clearDot(tabId);
-  }
+  const state = res.ok ? badgeState(res.data) : "none";
+  if (state === "counter") applyDot(tabId, COLOR_COUNTER);
+  else if (state === "context") applyDot(tabId, COLOR_CONTEXT);
+  else clearDot(tabId);
 }
 
 function restoreBadge(tabId, state) {
-  if (!tabId || !state) return;
-  if (state === "found") applyDot(tabId, "#22c55e");
-  else if (state === "notfound") applyDot(tabId, "#ef4444");
+  if (!tabId) return;
+  if (state === "counter") applyDot(tabId, COLOR_COUNTER);
+  else if (state === "context") applyDot(tabId, COLOR_CONTEXT);
+  else if (state === "neutral") applyDot(tabId, COLOR_NEUTRAL);
 }
 
 async function applyDot(tabId, color) {
   try {
-    const bitmap = await createImageBitmap(
-      await (await fetch(chrome.runtime.getURL("icons/icon32.png"))).blob()
-    );
+    const bitmap = await createImageBitmap(await (await fetch(chrome.runtime.getURL("icons/icon32.png"))).blob());
     const canvas = new OffscreenCanvas(32, 32);
     const ctx = canvas.getContext("2d");
     ctx.drawImage(bitmap, 0, 0, 32, 32);
@@ -73,35 +78,25 @@ async function applyDot(tabId, color) {
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 1.5;
     ctx.stroke();
-    const imageData = ctx.getImageData(0, 0, 32, 32);
-    await chrome.action.setIcon({ imageData: { 32: imageData }, tabId });
-  } catch (e) {
-    console.warn("[FlipSide] applyDot failed:", e);
-  }
+    await chrome.action.setIcon({ imageData: { 32: ctx.getImageData(0, 0, 32, 32) }, tabId });
+  } catch (e) { console.warn("[FlipSide] applyDot failed:", e); }
 }
 
 function clearDot(tabId) {
-  chrome.action.setIcon({
-    path: { 16: "icons/icon16.png", 32: "icons/icon32.png", 48: "icons/icon48.png" },
-    tabId,
-  }).catch(() => {});
+  chrome.action.setIcon({ path: { 16: "icons/icon16.png", 32: "icons/icon32.png", 48: "icons/icon48.png" }, tabId }).catch(() => {});
 }
 
-// --- Badge state cache (chrome.storage.local) -----------------------------
+// --- Badge-state cache ----------
 const BADGE_CACHE_KEY = "badgeCache";
-const BADGE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const BADGE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 async function saveBadgeState(url, state) {
   const store = (await chrome.storage.local.get(BADGE_CACHE_KEY))[BADGE_CACHE_KEY] || {};
   store[url] = { state, ts: Date.now() };
   const keys = Object.keys(store);
-  if (keys.length > 500) {
-    keys.sort((a, b) => store[a].ts - store[b].ts);
-    for (const k of keys.slice(0, keys.length - 500)) delete store[k];
-  }
+  if (keys.length > 500) { keys.sort((a, b) => store[a].ts - store[b].ts); for (const k of keys.slice(0, keys.length - 500)) delete store[k]; }
   await chrome.storage.local.set({ [BADGE_CACHE_KEY]: store });
 }
-
 async function getBadgeState(url) {
   const store = (await chrome.storage.local.get(BADGE_CACHE_KEY))[BADGE_CACHE_KEY] || {};
   const entry = store[url];
@@ -109,113 +104,150 @@ async function getBadgeState(url) {
   return entry.state;
 }
 
+// --- Messages ----------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // Legacy non-streaming endpoint
-  if (msg?.type === "ANALYZE") {
-    handleAnalyze(msg.payload).then(sendResponse);
-    return true; // keep channel open for async response
-  }
-  if (msg?.type === "OPEN_OPTIONS") {
-    chrome.runtime.openOptionsPage();
-    return false;
-  }
+  if (msg?.type === "ANALYZE") { handleAnalyze(msg.payload).then(sendResponse); return true; }
+  if (msg?.type === "OPEN_OPTIONS") { chrome.runtime.openOptionsPage(); return false; }
   if (msg?.type === "PAGE_LOADED") {
     const tabId = sender.tab?.id ?? null;
-    if (tabId && msg.url) {
-      getBadgeState(msg.url).then((state) => restoreBadge(tabId, state));
-    }
+    if (tabId && msg.url) getBadgeState(msg.url).then((state) => restoreBadge(tabId, state));
     return false;
   }
   if (msg?.type === "PREANALYZE") {
     const tabId = sender.tab?.id ?? null;
     const url = msg.payload?.url;
     if (!tabId || !url) return false;
-    chrome.storage.local.get(["apiKey", "byokProvider", "preanalyzeEnabled"]).then(async ({ apiKey, byokProvider, preanalyzeEnabled }) => {
-      if (apiKey && preanalyzeEnabled === false) return; // user opted out
-      const existing = await getBadgeState(url);
-      if (existing) return; // badge already cached — PAGE_LOADED already restored it
-      const res = await handleAnalyze(msg.payload);
-      setBadge(tabId, res);
-      if (res.ok) {
-        await saveBadgeState(url, res.data?.counter?.found === true ? "found" : "notfound");
-      }
+    chrome.storage.local.get(["apiKey", "preanalyzeEnabled"]).then(async ({ apiKey, preanalyzeEnabled }) => {
+      if (apiKey && preanalyzeEnabled === false) return;
+      if (await getBadgeState(url)) return; // already known (neutral or a real result)
+      // Classify only — cheap. The expensive synthesis runs on click. A neutral
+      // gray dot means "there's an examinable claim here", never an over-promise.
+      const cls = await getClassification(msg.payload).catch(() => null);
+      if (!cls) return;
+      const analyzable = cls.analyzable && (cls.claim_strength ?? 1) >= CLAIM_THRESHOLD;
+      if (analyzable) applyDot(tabId, COLOR_NEUTRAL);
+      await saveBadgeState(url, analyzable ? "neutral" : "none");
     });
     return false;
   }
   return false;
 });
 
-async function handleAnalyze(payload, onChunk = null) {
+// --- The pipeline ----------
+async function handleAnalyze(payload, onStage = null) {
   const cacheKey = hashStr((payload.url || "") + "\n" + (payload.text || ""));
 
-  // Primary cache: exact hash(url+text) match.
-  const cached = await cacheGet(cacheKey);
-  if (cached) {
-    if (onChunk) onChunk(JSON.stringify(cached));
-    return { ok: true, data: cached, cached: true };
-  }
-
-  // Secondary cache: URL-only match. Catches the case where preanalyze captured
-  // slightly different text than the click-time extractor (late-rendering pages),
-  // producing a different hash but the same article.
-  const urlCached = await urlCacheGet(payload.url);
-  if (urlCached) {
-    if (onChunk) onChunk(JSON.stringify(urlCached));
-    return { ok: true, data: urlCached, cached: true };
-  }
+  const cached = (await cacheGet(cacheKey)) || (await urlCacheGet(payload.url));
+  if (cached) return { ok: true, data: cached, cached: true };
 
   const { apiKey, byokProvider } = await chrome.storage.local.get(["apiKey", "byokProvider"]);
+  const provider = byokProvider ?? "groq";
 
   try {
-    let data;
-    if (apiKey) {
-      data = await callDirect({ apiKey, provider: byokProvider ?? "groq", payload }, onChunk);
-    } else {
-      data = await callProxy(payload, onChunk);
+    // CALL 1 — classify (reuses the result cached by background preanalyze)
+    onStage?.("Finding the core claim…");
+    const cls = await getClassification(payload);
+    if (!cls.analyzable) return saveAndReturn(cacheKey, payload.url, { result_type: "none", reason: "not_analyzable" });
+
+    // RETRIEVAL — real evidence
+    onStage?.("Searching credible evidence…");
+    const all = await fetchSources(cls.research_query || payload.title, cls.topic, payload.url || "");
+    const usable = all.filter((s) => s.usable);
+    if (usable.length === 0) {
+      return saveAndReturn(cacheKey, payload.url, {
+        result_type: "none", reason: "insufficient_evidence",
+        furtherReading: trimSources(all, 5),
+      });
     }
-    await cacheSet(cacheKey, data);
-    await urlCacheSet(payload.url, data);
-    return { ok: true, data };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err?.message ?? "The analysis request failed.",
-      retryAfter: err?.retryAfter ?? 0,
-      daily: err?.daily === true,
+
+    // CALL 2 — synthesize from evidence
+    onStage?.("Weighing the evidence…");
+    const synth = await synthesize({
+      apiKey, provider, article: payload,
+      articleType: cls.article_type, coreClaim: cls.core_claim, evidence: usable,
+    });
+    if (synth.result_type === "none") {
+      return saveAndReturn(cacheKey, payload.url, {
+        result_type: "none", reason: synth.reason || "no_material_finding",
+        furtherReading: trimSources(all, 5),
+      });
+    }
+
+    // VALIDATE provenance — keep only cited sources whose quote is really present
+    const byId = new Map(usable.map((s) => [s.id, s]));
+    const validated = [];
+    for (const u of synth.used_sources) {
+      const src = byId.get(u.id);
+      if (!src) continue;
+      if (quoteAppears(u.evidence_quote, src.evidence_text)) validated.push(src);
+    }
+    // If the model cited sources but none passed the quote check, fall back to the
+    // cited sources (the synthesis still reasoned over real abstracts) rather than
+    // showing a perspective with zero sources.
+    let shown = dedupByUrl(validated);
+    if (shown.length === 0) shown = dedupByUrl(synth.used_sources.map((u) => byId.get(u.id)).filter(Boolean));
+
+    const shownUrls = new Set(shown.map((s) => s.url));
+    const data = {
+      result_type: synth.result_type,
+      headline: synth.headline,
+      summary: synth.summary,
+      core_claims: synth.core_claims,
+      confidence: synth.confidence,
+      sources: shown.map(pickFields),
+      furtherReading: trimSources(all.filter((s) => !shownUrls.has(s.url)), 4),
     };
+    return saveAndReturn(cacheKey, payload.url, data);
+  } catch (err) {
+    return { ok: false, error: err?.message ?? "The analysis request failed.", retryAfter: err?.retryAfter ?? 0, daily: err?.daily === true };
   }
 }
 
-// --- Result cache (chrome.storage.local) ----------------------------------
-// One JSON object holds all entries; small payloads (~1–2 KB each) and a hard
-// cap keep us well under the storage quota without needing extra permissions.
+// Lenient verbatim check: the model's quote must actually appear in the abstract
+// (whitespace/case-normalized). Paraphrases are rejected — that's intentional.
+function quoteAppears(quote, evidence) {
+  const q = normalize(quote);
+  const hay = normalize(evidence);
+  if (!hay) return false;
+  if (q.length < 8) return false;            // too short to verify → reject
+  return hay.includes(q.slice(0, Math.min(q.length, 50)));
+}
+function normalize(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
+
+function pickFields(s) { return { title: s.title, url: s.url, publisher: s.publisher, kind: s.kind }; }
+function trimSources(arr, n) { return dedupByUrl(arr).slice(0, n).map(pickFields); }
+function dedupByUrl(arr) {
+  const seen = new Set(), out = [];
+  for (const s of arr) { if (!s?.url || seen.has(s.url)) continue; seen.add(s.url); out.push(s); }
+  return out;
+}
+
+function saveAndReturn(cacheKey, url, data) {
+  cacheSet(cacheKey, data);
+  urlCacheSet(url, data);
+  return { ok: true, data };
+}
+
+// --- Result cache ----------
 const CACHE_KEY = "analysisCache";
-const CACHE_MAX = 150; // evict oldest beyond this
-const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30-day freshness bound
+const CACHE_MAX = 150;
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
 async function cacheGet(key) {
   const store = (await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY] || {};
   const entry = store[key];
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL_MS) return null;
+  if (!entry || Date.now() - entry.ts > CACHE_TTL_MS) return null;
   return entry.data;
 }
-
 async function cacheSet(key, data) {
   const store = (await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY] || {};
   store[key] = { data, ts: Date.now() };
   const keys = Object.keys(store);
-  if (keys.length > CACHE_MAX) {
-    keys.sort((a, b) => store[a].ts - store[b].ts);
-    for (const k of keys.slice(0, keys.length - CACHE_MAX)) delete store[k];
-  }
+  if (keys.length > CACHE_MAX) { keys.sort((a, b) => store[a].ts - store[b].ts); for (const k of keys.slice(0, keys.length - CACHE_MAX)) delete store[k]; }
   await chrome.storage.local.set({ [CACHE_KEY]: store });
 }
 
-// --- URL-keyed result cache -----------------------------------------------
-// Secondary fallback for when preanalyze and click-time text hashes diverge.
 const URL_CACHE_KEY = "urlCache";
-
 async function urlCacheGet(url) {
   if (!url) return null;
   const store = (await chrome.storage.local.get(URL_CACHE_KEY))[URL_CACHE_KEY] || {};
@@ -223,20 +255,36 @@ async function urlCacheGet(url) {
   if (!entry || Date.now() - entry.ts > CACHE_TTL_MS) return null;
   return entry.data;
 }
-
 async function urlCacheSet(url, data) {
   if (!url) return;
   const store = (await chrome.storage.local.get(URL_CACHE_KEY))[URL_CACHE_KEY] || {};
   store[url] = { data, ts: Date.now() };
   const keys = Object.keys(store);
-  if (keys.length > 200) {
-    keys.sort((a, b) => store[a].ts - store[b].ts);
-    for (const k of keys.slice(0, keys.length - 200)) delete store[k];
-  }
+  if (keys.length > 200) { keys.sort((a, b) => store[a].ts - store[b].ts); for (const k of keys.slice(0, keys.length - 200)) delete store[k]; }
   await chrome.storage.local.set({ [URL_CACHE_KEY]: store });
 }
 
-// djb2 — fast, non-cryptographic; we only need a stable cache key.
+// --- Classification cache ----------
+// Call 1 (classify) result, shared between background preanalyze and the click.
+// This is what keeps the cost at ~1 classify per article + 1 synth per click.
+const CLASS_CACHE_KEY = "classifyCache";
+
+async function getClassification(payload) {
+  const key = hashStr((payload.url || "") + "\n" + (payload.text || ""));
+  const store = (await chrome.storage.local.get(CLASS_CACHE_KEY))[CLASS_CACHE_KEY] || {};
+  const entry = store[key];
+  if (entry && Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
+
+  const { apiKey, byokProvider } = await chrome.storage.local.get(["apiKey", "byokProvider"]);
+  const cls = await classify({ apiKey, provider: byokProvider ?? "groq", article: payload });
+
+  store[key] = { data: cls, ts: Date.now() };
+  const keys = Object.keys(store);
+  if (keys.length > 200) { keys.sort((a, b) => store[a].ts - store[b].ts); for (const k of keys.slice(0, keys.length - 200)) delete store[k]; }
+  await chrome.storage.local.set({ [CLASS_CACHE_KEY]: store });
+  return cls;
+}
+
 function hashStr(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;

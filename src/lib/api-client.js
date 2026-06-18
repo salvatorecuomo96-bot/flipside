@@ -1,11 +1,13 @@
-// api-client.js — two routes to the same 70B model, chosen by the service worker.
+// api-client.js — two model calls, each routable to the free proxy or a BYOK key.
 //
-// callProxy  — no key needed; posts to the hosted Cloudflare Worker.
-// callDirect — user supplied their own Groq key; calls Groq directly.
+//   classify()   — Call 1: article → {analyzable, core_claim, topic, research_query, ...}
+//   synthesize() — Call 2: article + core_claim + real evidence → grounded result
 //
-// Both return a parsed perspective object; both throw on failure.
+// Free path posts {stage, ...} to the Cloudflare Worker, which runs the matching
+// prompt server-side and returns { content }. BYOK path builds messages locally
+// and calls the provider directly (falling back to the proxy on an invalid key).
 
-import { buildMessages } from "./prompt.js";
+import { buildClassifyMessages, buildSynthMessages } from "./prompt.js";
 
 const PROXY_URL = "https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev";
 const TIMEOUT_MS = 30000;
@@ -25,86 +27,85 @@ const BYOK_PROVIDERS = {
   fireworks:  { endpoint: "https://api.fireworks.ai/inference/v1/chat/completions",                   model: "accounts/fireworks/models/llama-v3p3-70b-instruct" },
 };
 
-export async function callProxy({ title, text, url }, onChunk) {
-  const resp = await fetchWithTimeout(PROXY_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Origin": `chrome-extension://${chrome.runtime.id}`,
-    },
-    body: JSON.stringify({ title, text, url }),
-  });
+// ── Public API ───────────────────────────────────────────────────────────────
 
-  if (!resp.ok) {
-    if (resp.status === 429) {
-      const body = await safeJson(resp);
-      if (body?.reason === "rate_limit") {
-        const err = new Error(body.error || "The service is busy. Please wait a moment.");
-        err.retryAfter = body.retryAfter || 60;
-        throw err;
-      }
-      const err = new Error(
-        body?.error || "The shared free service has hit today's limit. Add your own free Groq key in the extension options for your own quota."
-      );
-      err.daily = true;
-      throw err;
-    }
-    const detail = await safeErrorText(resp);
-    throw new Error(`Proxy error (${resp.status}): ${detail}`);
+export async function classify({ apiKey, provider = "groq", article }) {
+  let content;
+  if (apiKey) {
+    content = await rawComplete({ apiKey, provider, messages: buildClassifyMessages(article), payloadForFallback: { stage: "classify", ...article } });
+  } else {
+    content = await proxyComplete({ stage: "classify", title: article.title, text: article.text, url: article.url });
   }
-
-  return processStream(resp, onChunk);
+  return parseClassification(content);
 }
 
-export async function callDirect({ apiKey, provider = "groq", payload }, onChunk) {
-  if (provider === "anthropic") return callAnthropic(apiKey, payload, onChunk);
+export async function synthesize({ apiKey, provider = "groq", article, articleType, coreClaim, evidence }) {
+  const messages = buildSynthMessages({ article, articleType, coreClaim, evidence });
+  let content;
+  if (apiKey) {
+    content = await rawComplete({
+      apiKey, provider, messages,
+      payloadForFallback: { stage: "synthesize", title: article.title, text: article.text, url: article.url, articleType, coreClaim, evidence },
+    });
+  } else {
+    content = await proxyComplete({
+      stage: "synthesize", title: article.title, text: article.text, url: article.url, articleType, coreClaim, evidence,
+    });
+  }
+  return parseSynthesis(content);
+}
 
-  const cfg = BYOK_PROVIDERS[provider] ?? BYOK_PROVIDERS.groq;
+// ── Proxy (free) ─────────────────────────────────────────────────────────────
 
-  const resp = await fetchWithTimeout(cfg.endpoint, {
+async function proxyComplete(body) {
+  const resp = await fetchWithTimeout(PROXY_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      messages: buildMessages(payload),
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      stream: true,
-    }),
+    headers: { "Content-Type": "application/json", "Origin": `chrome-extension://${chrome.runtime.id}` },
+    body: JSON.stringify(body),
   });
-
   if (!resp.ok) {
-    const detail = await safeErrorText(resp);
     if (resp.status === 429) {
-      const lower = detail.toLowerCase();
-      if (lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)")) {
-        const err = new Error("Your API key hit today's limit. It resets at midnight UTC.");
-        err.daily = true;
-        throw err;
-      }
-      const m = detail.match(/try again in ([\d.]+)s/i);
-      const err = new Error("Rate limit — too many requests this minute.");
-      err.retryAfter = m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60;
+      const b = await safeJson(resp);
+      const err = new Error(b?.error || "The shared free service is busy. Please wait a moment.");
+      if (b?.reason === "quota_daily") err.daily = true; else err.retryAfter = b?.retryAfter || 60;
       throw err;
     }
-    if (resp.status === 401) {
-      // Invalid key — silently fall back to the shared proxy so the user isn't blocked.
-      return callProxy(payload, onChunk);
+    throw new Error(`Proxy error (${resp.status}): ${await safeErrorText(resp)}`);
+  }
+  const data = await resp.json();
+  return data?.content ?? "";
+}
+
+// ── BYOK (direct) ────────────────────────────────────────────────────────────
+
+async function rawComplete({ apiKey, provider, messages, payloadForFallback }) {
+  if (provider === "anthropic") return rawAnthropic(apiKey, messages, payloadForFallback);
+
+  const cfg = BYOK_PROVIDERS[provider] ?? BYOK_PROVIDERS.groq;
+  const resp = await fetchWithTimeout(cfg.endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: cfg.model, messages, temperature: 0.1, response_format: { type: "json_object" }, stream: false }),
+  });
+  if (!resp.ok) {
+    const detail = await safeErrorText(resp);
+    if (resp.status === 401) return proxyComplete(payloadForFallback); // invalid key → free path
+    if (resp.status === 429) {
+      const lower = detail.toLowerCase();
+      const err = new Error("Rate limit — too many requests.");
+      if (lower.includes("per day") || lower.includes("(rpd)") || lower.includes("(tpd)")) { err.daily = true; }
+      else { const m = detail.match(/try again in ([\d.]+)s/i); err.retryAfter = m ? Math.max(5, Math.ceil(parseFloat(m[1]))) : 60; }
+      throw err;
     }
     throw new Error(`${provider} error (${resp.status}): ${detail}`);
   }
-
-  return processStream(resp, onChunk);
+  const data = await resp.json();
+  return data?.choices?.[0]?.message?.content ?? "";
 }
 
-async function callAnthropic(apiKey, payload, onChunk) {
-  const all = buildMessages(payload);
-  const system = all.find(m => m.role === "system")?.content ?? "";
-  const messages = all.filter(m => m.role !== "system");
-
+async function rawAnthropic(apiKey, messages, payloadForFallback) {
+  const system = messages.find(m => m.role === "system")?.content ?? "";
+  const msgs = messages.filter(m => m.role !== "system");
   const resp = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -113,101 +114,58 @@ async function callAnthropic(apiKey, payload, onChunk) {
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true",
     },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      system,
-      messages,
-      stream: true,
-    }),
+    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1024, system, messages: msgs, stream: false }),
   });
-
   if (!resp.ok) {
-    if (resp.status === 401) return callProxy(payload, onChunk);
-    if (resp.status === 429) {
-      const err = new Error("Anthropic rate limit — too many requests.");
-      err.retryAfter = 60;
-      throw err;
-    }
-    const detail = await safeErrorText(resp);
-    throw new Error(`Anthropic error (${resp.status}): ${detail}`);
+    if (resp.status === 401) return proxyComplete(payloadForFallback);
+    if (resp.status === 429) { const err = new Error("Anthropic rate limit."); err.retryAfter = 60; throw err; }
+    throw new Error(`Anthropic error (${resp.status}): ${await safeErrorText(resp)}`);
   }
-
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-  let fullText = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop();
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      try {
-        const data = JSON.parse(line.slice(6));
-        if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
-          fullText += data.delta.text ?? "";
-          if (onChunk) onChunk(fullText);
-        }
-      } catch {}
-    }
-  }
-
-  if (onChunk) onChunk(fullText);
-  return parsePerspective(fullText);
+  const data = await resp.json();
+  return data?.content?.[0]?.text ?? "";
 }
 
-async function processStream(resp, onChunk) {
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-  let fullText = "";
+// ── Parsing ──────────────────────────────────────────────────────────────────
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    let lines = buffer.split("\n");
-    buffer = lines.pop(); // keep the last incomplete line
-
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const dataStr = line.slice(6).trim();
-        if (dataStr === "[DONE]") continue;
-        try {
-          const data = JSON.parse(dataStr);
-          const chunk = data?.choices?.[0]?.delta?.content ?? "";
-          if (chunk) {
-            fullText += chunk;
-            if (onChunk) onChunk(fullText);
-          }
-        } catch {
-          // Ignore invalid JSON chunks (some providers send comments or bad formatting)
-        }
-      }
-    }
-  }
-  
-  if (buffer.startsWith("data: ")) {
-    try {
-      const dataStr = buffer.slice(6).trim();
-      if (dataStr !== "[DONE]") {
-        const data = JSON.parse(dataStr);
-        const chunk = data?.choices?.[0]?.delta?.content ?? "";
-        if (chunk) fullText += chunk;
-      }
-    } catch {}
-  }
-
-  if (onChunk) onChunk(fullText);
-  return parsePerspective(fullText);
+function looseJson(content) {
+  try { return JSON.parse(content); } catch {}
+  const m = content.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch {} }
+  return null;
 }
 
-// --- helpers ------------------------------------------------------------------
+function parseClassification(content) {
+  const p = looseJson(content) || {};
+  return {
+    analyzable: p.analyzable === true,
+    article_type: typeof p.article_type === "string" ? p.article_type : "news",
+    core_claim: typeof p.core_claim === "string" ? p.core_claim : "",
+    topic: typeof p.topic === "string" ? p.topic : "",
+    research_query: typeof p.research_query === "string" ? p.research_query : "",
+    expected_response_type: typeof p.expected_response_type === "string" ? p.expected_response_type : "unknown",
+    claim_strength: typeof p.claim_strength === "number" ? Math.max(0, Math.min(1, p.claim_strength)) : 0.5,
+  };
+}
+
+function parseSynthesis(content) {
+  const p = looseJson(content) || {};
+  const type = p.result_type === "counter_perspective" || p.result_type === "additional_context" ? p.result_type : "none";
+  if (type === "none") return { result_type: "none", reason: typeof p.reason === "string" ? p.reason : "" };
+  return {
+    result_type: type,
+    headline: typeof p.headline === "string" ? p.headline : "",
+    summary: typeof p.summary === "string" ? p.summary : "",
+    core_claims: Array.isArray(p.core_claims) ? p.core_claims.map(String).slice(0, 4) : [],
+    confidence: typeof p.confidence === "number" ? Math.max(0, Math.min(1, p.confidence)) : 0.5,
+    used_sources: Array.isArray(p.used_sources) ? p.used_sources.filter(u => u && typeof u.id === "string").map(u => ({
+      id: u.id,
+      supports_sentence: typeof u.supports_sentence === "string" ? u.supports_sentence : "",
+      evidence_quote: typeof u.evidence_quote === "string" ? u.evidence_quote : "",
+    })) : [],
+  };
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
 
 async function fetchWithTimeout(url, options) {
   const controller = new AbortController();
@@ -223,40 +181,7 @@ async function fetchWithTimeout(url, options) {
 }
 
 async function safeErrorText(resp) {
-  try {
-    const d = await resp.json();
-    return d?.error?.message || JSON.stringify(d).slice(0, 200);
-  } catch {
-    return resp.statusText || "no detail";
-  }
+  try { const d = await resp.json(); return d?.error?.message || JSON.stringify(d).slice(0, 200); }
+  catch { return resp.statusText || "no detail"; }
 }
-
-// Read a JSON body without throwing (a response body can only be read once).
-async function safeJson(resp) {
-  try {
-    return await resp.json();
-  } catch {
-    return null;
-  }
-}
-
-function parsePerspective(content) {
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    const match = content.match(/\{[\s\S]*\}/);
-    if (!match) return { claims: [], counter: { found: false, perspective: "", reasoning: "", sources: [] } };
-    try { parsed = JSON.parse(match[0]); } catch { return { claims: [], counter: { found: false, perspective: "", reasoning: "", sources: [] } }; }
-  }
-  const counter = parsed?.counter ?? {};
-  return {
-    claims: Array.isArray(parsed?.claims) ? parsed.claims.map(String) : [],
-    counter: {
-      found: counter.found === true,
-      perspective: typeof counter.perspective === "string" ? counter.perspective : "",
-      reasoning: typeof counter.reasoning === "string" ? counter.reasoning : "",
-      sources: Array.isArray(counter.sources) ? counter.sources.map(String) : [],
-    },
-  };
-}
+async function safeJson(resp) { try { return await resp.json(); } catch { return null; } }

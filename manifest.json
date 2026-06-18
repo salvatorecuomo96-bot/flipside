@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FlipSide",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "A skeptical mirror for web content. Surfaces the strongest credible counter-perspective when one exists.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [
@@ -18,7 +18,15 @@
     "https://api.mistral.ai/*",
     "https://api.perplexity.ai/*",
     "https://api.together.xyz/*",
-    "https://api.fireworks.ai/*"
+    "https://api.fireworks.ai/*",
+    "https://api.openalex.org/*",
+    "https://news.google.com/*",
+    "https://en.wikipedia.org/*",
+    "https://api.gdeltproject.org/*",
+    "https://www.ebi.ac.uk/*",
+    "https://export.arxiv.org/*",
+    "https://www.courtlistener.com/*",
+    "https://www.federalregister.gov/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js",
@@ -56,7 +64,8 @@
         "src/content/extractor.js",
         "src/content/ui/panel.js",
         "src/lib/api-client.js",
-        "src/lib/prompt.js"
+        "src/lib/prompt.js",
+        "src/lib/sources.js"
       ],
       "matches": ["http://*/*", "https://*/*"]
     }
