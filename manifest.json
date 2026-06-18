@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FlipSide",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "A skeptical mirror for web content. Surfaces the strongest credible counter-perspective when one exists.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [
@@ -28,11 +28,7 @@
     "https://www.courtlistener.com/*",
     "https://www.federalregister.gov/*",
     "https://clinicaltrials.gov/*",
-    "https://efts.sec.gov/*",
-    "https://www.sec.gov/*",
-    "https://search.worldbank.org/*",
-    "https://www.everycrsreport.com/*",
-    "https://bills-api.parliament.uk/*"
+    "https://search.worldbank.org/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js",

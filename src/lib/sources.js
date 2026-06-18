@@ -10,8 +10,7 @@
 // (host_permissions bypass CORS). Each user fetches from their own IP.
 //
 // Evidence-bearing feeds:   OpenAlex · Europe PMC · arXiv · Federal Register · CourtListener
-//                           ClinicalTrials.gov · SEC EDGAR · World Bank · CRS · EPA · UK Parliament
-//                           Wikipedia
+//                           ClinicalTrials.gov · World Bank · EPA · Wikipedia
 // Further-reading-only feeds: Google News · GDELT
 
 const TIMEOUT_MS = 8000;
@@ -21,7 +20,7 @@ const MIN_EVIDENCE_CHARS = 80; // shorter than this isn't real evidence
 const CAP = {
   openAlex: 4, news: 3, gdelt: 2, wikipedia: 1,
   europePMC: 3, arxiv: 2, courtListener: 2, fedRegister: 2,
-  clinicalTrials: 3, edgar: 3, worldBank: 3, crs: 3, epaRegs: 2, ukParliament: 3,
+  clinicalTrials: 3, worldBank: 4, epaRegs: 2,
 };
 
 /**
@@ -47,20 +46,9 @@ export async function fetchSources(query, topic = "", articleUrl = "") {
     jobs.push(cap(fetchClinicalTrials(q), CAP.clinicalTrials));
   }
   if (["science", "physics", "technology"].includes(t))   jobs.push(cap(fetchArxiv(q), CAP.arxiv));
-  if (["law", "legal", "court"].includes(t)) {
-    jobs.push(cap(fetchCourtListener(q), CAP.courtListener));
-    jobs.push(cap(fetchUKParliament(q),  CAP.ukParliament));
-  }
-  if (["government", "policy"].includes(t)) {
-    jobs.push(cap(fetchFederalRegister(q), CAP.fedRegister));
-    jobs.push(cap(fetchCRS(q),             CAP.crs));
-    jobs.push(cap(fetchUKParliament(q),    CAP.ukParliament));
-  }
-  if (["politics"].includes(t))                           jobs.push(cap(fetchCRS(q), CAP.crs));
-  if (["finance", "economics"].includes(t)) {
-    jobs.push(cap(fetchEdgar(q),     CAP.edgar));
-    jobs.push(cap(fetchWorldBank(q), CAP.worldBank));
-  }
+  if (["law", "legal", "court"].includes(t))              jobs.push(cap(fetchCourtListener(q), CAP.courtListener));
+  if (["government", "policy"].includes(t))               jobs.push(cap(fetchFederalRegister(q), CAP.fedRegister));
+  if (["finance", "economics"].includes(t))               jobs.push(cap(fetchWorldBank(q), CAP.worldBank));
   if (["environment"].includes(t)) {
     jobs.push(cap(fetchWorldBank(q),       CAP.worldBank));
     jobs.push(cap(fetchEPARegulations(q),  CAP.epaRegs));
@@ -301,79 +289,30 @@ async function fetchClinicalTrials(q) {
   });
 }
 
-// --- SEC EDGAR: public company filings WITH text highlights -----------------
-async function fetchEdgar(q) {
-  const url = "https://efts.sec.gov/LATEST/search-index?q=" + encodeURIComponent(q) +
-    "&forms=10-K,8-K&dateRange=custom&startdt=2022-01-01";
-  const data = await getJson(url);
-  return (data?.hits?.hits || []).slice(0, 3).flatMap(h => {
-    const src    = h._source || {};
-    const entity = (src.display_names?.[0] || src.entity_name || "")
-      .replace(/\s*\(CIK\s*[\d]+\)/i, "").trim();
-    if (!entity) return [];
-    const snippet   = (h.highlight?.file_contents?.[0] || "")
-      .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    const formType  = src.form_type || "";
-    const year      = (src.file_date || "").slice(0, 4);
-    const cikMatch  = (src.display_names?.[0] || "").match(/CIK\s*0*(\d+)/i);
-    const cik       = cikMatch?.[1];
-    const filingUrl = cik
-      ? "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=" + cik +
-        "&type=" + encodeURIComponent(formType) + "&dateb=&owner=include&count=5"
-      : "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=" +
-        encodeURIComponent(entity) + "&type=" + encodeURIComponent(formType) +
-        "&dateb=&owner=include&count=5";
-    return [{
-      title: entity + (formType ? " — " + formType : ""),
-      url: filingUrl,
-      publisher: ["SEC EDGAR", formType, year].filter(Boolean).join(" · "),
-      kind: "government",
-      evidence_text: snippet,
-      year: year ? Number(year) : null,
-    }];
-  });
-}
-
 // --- World Bank Documents: reports and working papers WITH abstracts ---------
+// WDS quirks (verified live): the search param is `qterm` (not `q`); `documents`
+// is an OBJECT keyed by doc id (plus a `facets` key to skip); the title is
+// `display_title`; and the abstract is nested as abstracts["cdata!"].
 async function fetchWorldBank(q) {
-  const url = "https://search.worldbank.org/api/v2/wds?format=json&q=" + encodeURIComponent(q) +
-    "&fl=docdt,docty,titl,abstracts,repnme,url&rows=3&os=0";
+  const url = "https://search.worldbank.org/api/v2/wds?format=json&qterm=" + encodeURIComponent(q) +
+    "&fl=docdt,docty,display_title,abstracts,url&rows=4&os=0";
   const data = await getJson(url);
-  const rawDocs = data?.documents;
-  const docs = Array.isArray(rawDocs)
-    ? rawDocs
-    : Object.values(rawDocs || {}).filter(d => d && typeof d === "object" && typeof d.titl === "string");
-  return docs.slice(0, 3).flatMap(d => {
-    const title = (d.titl || "").trim();
-    if (!title || !d.url) return [];
-    const abstract = (Array.isArray(d.abstracts) ? d.abstracts[0] : (d.abstracts || ""))
-      .replace(/\s+/g, " ").trim();
+  const docs = Object.values(data?.documents || {})
+    .filter(d => d && typeof d === "object" && typeof d.display_title === "string");
+  return docs.slice(0, 4).flatMap(d => {
+    const title = (d.display_title || "").trim();
+    const link  = (d.url || "").replace(/^http:/, "https:");
+    if (!title || !link) return [];
+    const rawAbstract = d.abstracts && typeof d.abstracts === "object"
+      ? (d.abstracts["cdata!"] || d.abstracts.cdata || "")
+      : (d.abstracts || "");
+    const abstract = String(rawAbstract).replace(/\s+/g, " ").trim();
     const year = (d.docdt || "").slice(0, 4);
     return [{
-      title, url: d.url,
-      publisher: ["World Bank", d.repnme, year].filter(Boolean).join(" · "),
+      title, url: link,
+      publisher: ["World Bank", d.docty, year].filter(Boolean).join(" · "),
       kind: "government",
       evidence_text: abstract,
-      year: year ? Number(year) : null,
-    }];
-  });
-}
-
-// --- Congressional Research Service: non-partisan policy analysis ------------
-async function fetchCRS(q) {
-  const url = "https://www.everycrsreport.com/search.json?q=" + encodeURIComponent(q) + "&n=3";
-  const data = await getJson(url);
-  return (data?.results || []).flatMap(r => {
-    const title  = (r.title || "").trim();
-    const crsUrl = r.url || "";
-    if (!title || !crsUrl) return [];
-    const summary = (r.summary || "").replace(/\s+/g, " ").trim();
-    const year    = (r.updated || r.date || "").slice(0, 4);
-    return [{
-      title, url: crsUrl,
-      publisher: ["Congressional Research Service", year].filter(Boolean).join(" · "),
-      kind: "government",
-      evidence_text: summary,
       year: year ? Number(year) : null,
     }];
   });
@@ -396,27 +335,6 @@ async function fetchEPARegulations(q) {
       publisher: ["EPA · Federal Register", year].filter(Boolean).join(" · "),
       kind: "government",
       evidence_text: (r.abstract || "").trim(),
-      year: year ? Number(year) : null,
-    }];
-  });
-}
-
-// --- UK Parliament Bills: primary legislation WITH long-title descriptions ---
-async function fetchUKParliament(q) {
-  const url = "https://bills-api.parliament.uk/api/v1/Bills?SearchTerm=" +
-    encodeURIComponent(q) + "&Take=3&Skip=0";
-  const data = await getJson(url);
-  return (data?.items || []).flatMap(b => {
-    const title = (b.shortTitle || "").trim();
-    if (!title) return [];
-    const longTitle = (b.longTitle || "").replace(/\s+/g, " ").trim();
-    const year      = (b.lastUpdate || "").slice(0, 4);
-    return [{
-      title,
-      url: "https://bills.parliament.uk/bills/" + b.billId,
-      publisher: ["UK Parliament", b.currentHouse, year].filter(Boolean).join(" · "),
-      kind: "government",
-      evidence_text: longTitle,
       year: year ? Number(year) : null,
     }];
   });

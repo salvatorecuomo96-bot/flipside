@@ -71,11 +71,8 @@ badge: green (counter) / blue (context) / gray (classify-only, pre-click) / none
 | Federal Register | government | Yes | topic: government/policy/environment |
 | CourtListener | legal | Yes | topic: law/legal/court |
 | ClinicalTrials.gov | academic | Yes | topic: health/medicine/science |
-| SEC EDGAR | government | Yes (filing highlights) | topic: finance/economics |
-| World Bank Documents | government | Yes | topic: finance/economics/environment |
-| Congressional Research Service | government | Yes | topic: politics/policy/government |
+| World Bank Documents | government | Yes (qterm param, abstracts["cdata!"]) | topic: finance/economics/environment |
 | EPA (via Federal Register) | government | Yes | topic: environment |
-| UK Parliament Bills | government | Yes (long title) | topic: law/government/policy |
 | Wikipedia (summary extract API) | reference | Yes | Always |
 | Google News RSS | news | No — further reading only | Always |
 | GDELT | news | No — further reading only | Always |
@@ -97,8 +94,13 @@ Topics recognised by classify: health · science · law · finance · government
 ## CWS version state
 
 Last submitted to Chrome Web Store: **0.2.0** (was rejected — still counts).
-Current manifest version: **0.2.7** (not yet submitted).
-Next submission must be **≥ 0.2.8**.
+Current manifest version: **0.2.8** (built, not yet submitted).
+Next submission must be **≥ 0.2.8** (0.2.8 is now ready to upload).
+
+Dropped feeds (no viable keyless API as of 2026-06): SEC EDGAR (full-text search returns
+no text snippet, only metadata), CRS / everycrsreport.com (no JSON API — 404; congress.gov
+and govinfo require keys), UK Parliament Bills (longTitle needs N+1 per-bill fetch; slow/flaky).
+Keyless alternatives still TBD — see git history for the working 3 (ClinicalTrials, World Bank, EPA).
 
 Rule: version must be strictly increasing. Even a rejected upload locks that number.
 Before every CWS upload: bump `manifest.json` version → `./build-zip.ps1` → upload `dist/FlipSide-vX.Y.Z-chrome.zip`.
