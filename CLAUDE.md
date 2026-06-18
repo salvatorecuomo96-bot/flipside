@@ -73,6 +73,7 @@ badge: green (counter) / blue (context) / gray (classify-only, pre-click) / none
 | ClinicalTrials.gov | academic | Yes | topic: health/medicine/science |
 | World Bank Documents | government | Yes (qterm param, abstracts["cdata!"]) | topic: finance/economics/environment |
 | EPA (via Federal Register) | government | Yes | topic: environment |
+| NBER Working Papers | academic | Yes | topic: finance/economics |
 | Wikipedia (summary extract API) | reference | Yes | Always |
 | Google News RSS | news | No — further reading only | Always |
 | GDELT | news | No — further reading only | Always |
@@ -100,7 +101,9 @@ Next submission must be **≥ 0.2.8** (0.2.8 is now ready to upload).
 Dropped feeds (no viable keyless API as of 2026-06): SEC EDGAR (full-text search returns
 no text snippet, only metadata), CRS / everycrsreport.com (no JSON API — 404; congress.gov
 and govinfo require keys), UK Parliament Bills (longTitle needs N+1 per-bill fetch; slow/flaky).
-Keyless alternatives still TBD — see git history for the working 3 (ClinicalTrials, World Bank, EPA).
+Finance/economics gap recovered via NBER working papers (verified real abstracts).
+legislation.gov.uk (UK law) verified to return usable Atom <summary> text — NOT yet wired in,
+candidate for the UK gap when wanted.
 
 Rule: version must be strictly increasing. Even a rejected upload locks that number.
 Before every CWS upload: bump `manifest.json` version → `./build-zip.ps1` → upload `dist/FlipSide-vX.Y.Z-chrome.zip`.

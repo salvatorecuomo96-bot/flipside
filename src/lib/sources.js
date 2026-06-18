@@ -10,7 +10,7 @@
 // (host_permissions bypass CORS). Each user fetches from their own IP.
 //
 // Evidence-bearing feeds:   OpenAlex · Europe PMC · arXiv · Federal Register · CourtListener
-//                           ClinicalTrials.gov · World Bank · EPA · Wikipedia
+//                           ClinicalTrials.gov · World Bank · EPA · NBER · Wikipedia
 // Further-reading-only feeds: Google News · GDELT
 
 const TIMEOUT_MS = 8000;
@@ -20,7 +20,7 @@ const MIN_EVIDENCE_CHARS = 80; // shorter than this isn't real evidence
 const CAP = {
   openAlex: 4, news: 3, gdelt: 2, wikipedia: 1,
   europePMC: 3, arxiv: 2, courtListener: 2, fedRegister: 2,
-  clinicalTrials: 3, worldBank: 4, epaRegs: 2,
+  clinicalTrials: 3, worldBank: 4, epaRegs: 2, nber: 3,
 };
 
 /**
@@ -48,7 +48,10 @@ export async function fetchSources(query, topic = "", articleUrl = "") {
   if (["science", "physics", "technology"].includes(t))   jobs.push(cap(fetchArxiv(q), CAP.arxiv));
   if (["law", "legal", "court"].includes(t))              jobs.push(cap(fetchCourtListener(q), CAP.courtListener));
   if (["government", "policy"].includes(t))               jobs.push(cap(fetchFederalRegister(q), CAP.fedRegister));
-  if (["finance", "economics"].includes(t))               jobs.push(cap(fetchWorldBank(q), CAP.worldBank));
+  if (["finance", "economics"].includes(t)) {
+    jobs.push(cap(fetchWorldBank(q), CAP.worldBank));
+    jobs.push(cap(fetchNBER(q),      CAP.nber));
+  }
   if (["environment"].includes(t)) {
     jobs.push(cap(fetchWorldBank(q),       CAP.worldBank));
     jobs.push(cap(fetchEPARegulations(q),  CAP.epaRegs));
@@ -312,6 +315,30 @@ async function fetchWorldBank(q) {
       title, url: link,
       publisher: ["World Bank", d.docty, year].filter(Boolean).join(" · "),
       kind: "government",
+      evidence_text: abstract,
+      year: year ? Number(year) : null,
+    }];
+  });
+}
+
+// --- NBER: economics working papers WITH abstracts --------------------------
+// Verified live: results[] each carry a real `abstract`, a `title`, a relative
+// `url` (e.g. "/papers/w30678"), and `displaydate` ("November 2022").
+async function fetchNBER(q) {
+  const url = "https://www.nber.org/api/v1/working_page_listing/contentType/working_paper/_/_/search?q=" +
+    encodeURIComponent(q) + "&page=1&perPage=4";
+  const data = await getJson(url);
+  return (data?.results || []).flatMap(r => {
+    const title = (r.title || "").replace(/\s+/g, " ").trim();
+    const path  = r.url || "";
+    if (!title || !path) return [];
+    const abstract = (r.abstract || "").replace(/\s+/g, " ").trim();
+    const year = (String(r.displaydate || "").match(/\b(19|20)\d{2}\b/) || [])[0] || "";
+    return [{
+      title,
+      url: path.startsWith("http") ? path : "https://www.nber.org" + path,
+      publisher: ["NBER Working Paper", year].filter(Boolean).join(" · "),
+      kind: "academic",
       evidence_text: abstract,
       year: year ? Number(year) : null,
     }];
