@@ -26,7 +26,13 @@
     "https://www.ebi.ac.uk/*",
     "https://export.arxiv.org/*",
     "https://www.courtlistener.com/*",
-    "https://www.federalregister.gov/*"
+    "https://www.federalregister.gov/*",
+    "https://clinicaltrials.gov/*",
+    "https://efts.sec.gov/*",
+    "https://www.sec.gov/*",
+    "https://search.worldbank.org/*",
+    "https://www.everycrsreport.com/*",
+    "https://bills-api.parliament.uk/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js",

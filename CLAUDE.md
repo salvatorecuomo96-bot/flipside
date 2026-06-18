@@ -68,13 +68,21 @@ badge: green (counter) / blue (context) / gray (classify-only, pre-click) / none
 | OpenAlex (filter=has_abstract:true) | academic | Yes | Always |
 | Europe PMC | academic | Yes | topic: health/medicine/science |
 | arXiv | preprint | Yes | topic: science/physics/technology |
-| Federal Register | government | Yes | topic: government/policy (NOT politics) |
+| Federal Register | government | Yes | topic: government/policy/environment |
 | CourtListener | legal | Yes | topic: law/legal/court |
+| ClinicalTrials.gov | academic | Yes | topic: health/medicine/science |
+| SEC EDGAR | government | Yes (filing highlights) | topic: finance/economics |
+| World Bank Documents | government | Yes | topic: finance/economics/environment |
+| Congressional Research Service | government | Yes | topic: politics/policy/government |
+| EPA (via Federal Register) | government | Yes | topic: environment |
+| UK Parliament Bills | government | Yes (long title) | topic: law/government/policy |
 | Wikipedia (summary extract API) | reference | Yes | Always |
 | Google News RSS | news | No — further reading only | Always |
 | GDELT | news | No — further reading only | Always |
 
-`usable=true` sources go into the synthesis prompt. Everything else is "Further reading."
+`usable=true` sources (evidence_text ≥ 80 chars) go into the synthesis prompt. Everything else is "Further reading."
+
+Topics recognised by classify: health · science · law · finance · government · policy · politics · technology · economics · environment
 
 ## Cloudflare Worker
 
@@ -83,7 +91,7 @@ badge: green (counter) / blue (context) / gray (classify-only, pre-click) / none
 - First deploy on a new machine: `cd worker && npx wrangler login && npx wrangler deploy`
 - Secrets (already set server-side, don't re-add unless rotating):
   `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `SAMBANOVA_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`
-- KV cache version: `v5` — bump `CACHE_KEY_VERSION` in `worker/index.js` whenever a prompt changes
+- KV cache version: `v6` — bump `CACHE_KEY_VERSION` in `worker/index.js` whenever a prompt changes
 - Provider chain: Groq → Cerebras → SambaNova → Gemini → OpenRouter → Workers AI
 
 ## CWS version state

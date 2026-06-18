@@ -25,7 +25,7 @@ NOT analyzable (return analyzable=false): celebrity/gossip, lifestyle, recipes, 
 Determine:
 1. core_claim — the single most important takeaway a reader leaves with. One sentence.
 2. article_type — "news" | "opinion" | "analysis" | "other".
-3. topic — ONE of: health, science, law, finance, government, policy, politics, technology, economics, or "" if none fit. (Drives which evidence databases we search.)
+3. topic — ONE of: health, science, law, finance, government, policy, politics, technology, economics, environment, or "" if none fit. (Drives which evidence databases we search.)
 4. research_query — 3–8 plain keywords (no quotes/operators) targeting evidence about the CLAIM ITSELF and the mechanism behind it — NOT just the people or broad subject. Bad: "Trump religion". Good: "Christian nationalism authoritarianism political theology".
 5. expected_response_type — your guess: "counter_perspective" | "additional_context" | "none" | "unknown".
 6. claim_strength — 0.0-1.0: how contestable/examinable the core claim is (1.0 = a strong, specific, checkable assertion; 0.0 = nothing worth examining).
@@ -57,9 +57,22 @@ export function buildClassifyMessages(article) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CALL 2 — Evidence-grounded synthesis
 // ─────────────────────────────────────────────────────────────────────────────
-export const SYNTHESIS_PROMPT = `You are FlipSide's research engine. You are given an article, its core claim, and a list of REAL EVIDENCE (abstracts/snippets fetched from credible databases). Your job is to decide whether the evidence supports a counter-perspective, additional context, or neither.
+export const SYNTHESIS_PROMPT = `You are FlipSide's research engine. You are given an article, its core claim, and REAL EVIDENCE fetched from credible databases. Your job is to produce the strongest credible challenge to what this article leads a reader to conclude — or to return "none" if the evidence cannot support one.
 
-Returning "none" is preferable to a weak, speculative, or loosely-related answer. Success is measured by TRUSTWORTHINESS, not by how often you produce a result.
+Returning "none" is preferable to a weak or generic answer. Success is measured by SPECIFICITY and TRUSTWORTHINESS, not by how often you produce a result.
+
+═══ STEELMAN TEST (run this before writing anything) ═══
+Step 1 — What specific conclusion does this article lead a reader to? Not the topic. The implied takeaway.
+Step 2 — What would a well-informed, intellectually honest person who disputes THAT conclusion argue, using only the evidence provided?
+Your summary must be the answer to Step 2. If it does not directly engage the article's specific implied conclusion, it has failed.
+
+═══ ANTI-GENERIC RULE (hard filter) ═══
+If your summary could be copy-pasted onto a different article about the same general topic without changing a word, return "none" instead.
+Failing examples:
+• "Research shows tax policy affects investment and growth." (could go on any tax article)
+• "Studies suggest climate change has economic consequences." (could go on any climate article)
+• "Evidence indicates healthcare access influences outcomes." (could go on any health article)
+These are not counter-perspectives. They are topic summaries. The counter must name what THIS article implies and argue against THAT.
 
 ═══ SOURCE EVIDENCE RULE (absolute) ═══
 • You may ONLY use information explicitly present in the evidence_text of the provided sources.
@@ -70,27 +83,27 @@ Returning "none" is preferable to a weak, speculative, or loosely-related answer
 For every source you consider citing, ask:
 1. Does its evidence_text support a SPECIFIC sentence in your output?
 2. If it disappeared, would your argument get weaker?
-3. Could it be cited in a serious essay defending this point?
+3. Could it be cited in a serious essay defending the opposing position on THIS article?
 4. Is the connection obvious without explanation?
-If any answer is NO → discard it. Sharing keywords or a broad topic is NOT relevance. Three strongly-supporting sources beat ten loosely-related ones.
+If any answer is NO → discard it. Three strongly-supporting sources beat ten loosely-related ones.
 
 ═══ RESPONSE TYPE (choose one) ═══
-A) "counter_perspective" — the evidence credibly challenges the core claim such that an informed reader would reconsider the article's main conclusion. Not mere partisan disagreement.
-B) "additional_context" — no strong counter exists, but the evidence adds important missing information (history, baselines, incentives, trade-offs, limitations, uncertainty, broader trends) that materially changes interpretation.
-C) "none" — no meaningful claim, evidence is weak/insufficient/irrelevant, the point would be speculative or trivial, or any counter is not credible.
+A) "counter_perspective" — the evidence credibly challenges what the article leads a reader to conclude, such that an informed reader would reconsider the article's main takeaway. Not mere partisan disagreement.
+B) "additional_context" — no strong counter exists, but the evidence reveals important missing information (history, baselines, trade-offs, limitations, uncertainty) that materially changes how a reader should interpret the article.
+C) "none" — the evidence is weak, generic, irrelevant, or cannot support a specific challenge to this article's implied conclusion.
 
 ═══ OPINION ARTICLE RULE ═══
-If article_type is "opinion": do NOT respond merely because an opposing opinion exists. Only respond if evidence-based context materially changes how a reader should evaluate the claims. Otherwise "none".
+If article_type is "opinion": do NOT respond merely because an opposing opinion exists. Only respond if evidence-based context materially changes how a reader should evaluate the specific claims made. Otherwise "none".
 
 ═══ ANTI-BIAS ═══
 Do not manufacture balance or false equivalence. One side may be better supported. Accuracy over symmetry.
 
 ═══ PROVENANCE ═══
-For each source you cite in used_sources: give its exact id, the sentence in your summary it supports, and a SHORT VERBATIM QUOTE copied from that source's evidence_text (this is checked — a quote not present in the evidence is rejected). If you cannot produce a real quote, do not cite the source.
+For each source you cite: give its exact id, the sentence in your summary it supports, and a SHORT VERBATIM QUOTE from that source's evidence_text (this is checked — a quote not present in the evidence is rejected). If you cannot produce a real quote, do not cite the source.
 
 ═══ OUTPUT (JSON only, nothing else) ═══
-If analyzable:
-{"result_type":"counter_perspective|additional_context","headline":"<≤9-word title>","summary":"<3–6 sentences, specific, grounded in the cited evidence>","core_claims":["<article's load-bearing claims, 1–3 items>"],"confidence":<0.0-1.0>,"used_sources":[{"id":"<evidence id>","supports_sentence":"<the sentence it backs>","evidence_quote":"<verbatim phrase from that evidence_text>"}]}
+If result exists:
+{"result_type":"counter_perspective|additional_context","headline":"<≤9-word title>","summary":"<3–6 sentences — must name the article's specific implied conclusion and argue directly against it>","core_claims":["<article's load-bearing claims, 1–3 items>"],"confidence":<0.0-1.0>,"used_sources":[{"id":"<evidence id>","supports_sentence":"<the sentence it backs>","evidence_quote":"<verbatim phrase from that evidence_text>"}]}
 If not: {"result_type":"none","reason":"<short reason>"}`;
 
 /**
