@@ -156,13 +156,10 @@ function renderResultHtml(data) {
 
   if (type === "mixed") return renderMixedHtml(data);
 
-  // NONE — confident silence. No links, no hedging.
+  // NONE — articulated silence. The service worker hands us a whitelisted reason
+  // code; we map it to fixed copy here and NEVER render model-generated prose.
   if (type !== "counter_perspective" && type !== "additional_context") {
-    return `
-      <section class="ec-section">
-        <p class="ec-label">FlipSide</p>
-        <p class="ec-none-msg">No credible counter-perspective or material context found.</p>
-      </section>`;
+    return renderNoneHtml(data);
   }
 
   const isCounter = type === "counter_perspective";
@@ -206,6 +203,66 @@ function renderMixedHtml(data) {
     ${empHtml}
     ${ctxHtml}
     <section class="ec-section">${renderFurther(data.furtherReading)}</section>
+    ${renderFeedbackHtml()}`;
+}
+
+// Fixed copy for every "none" reason code (see src/lib/silence.js ALL_NONE_REASONS).
+// The panel NEVER displays model-generated reason prose — only these strings.
+export const REASON_COPY = {
+  straight_reporting: {
+    title: "Factual report, no contestable claim",
+    body: "This article reports events or statements without advancing a conclusion that evidence could challenge.",
+  },
+  no_contestable_claim: {
+    title: "No checkable claim to investigate",
+    body: "This piece expresses a viewpoint but doesn't make a specific factual claim that research could address.",
+  },
+  no_sources_returned: {
+    title: "No relevant sources found",
+    body: "The evidence search returned nothing for this topic. The article may be too niche or too recent for indexed research.",
+  },
+  no_usable_evidence: {
+    title: "Sources found, but not enough evidence text",
+    body: "We found related sources, but could not retrieve enough of their content to evaluate the claim reliably.",
+  },
+  opinion_no_evidence_basis: {
+    title: "Opinion piece — evidence doesn't change the picture",
+    body: "This is an opinion article. The available research doesn't materially change how a reader should evaluate the author's argument.",
+  },
+  evidence_off_target: {
+    title: "Research found, but not on this claim",
+    body: "Available sources covered the broader topic but didn't directly address the article's specific conclusion.",
+  },
+  evidence_too_weak: {
+    title: "Evidence too thin to draw a conclusion",
+    body: "Some relevant research exists, but it's insufficient to make a credible counter-argument without overstating what the evidence shows.",
+  },
+  no_material_counter: {
+    title: "No meaningful counter-perspective found",
+    body: "The evidence reviewed doesn't credibly challenge the article's conclusion or add context that would change how a reader interprets it.",
+  },
+  normative_unresolved: {
+    title: "A value judgment — not settled by evidence",
+    body: "This claim is fundamentally moral or theological. Research can add context, but no study can settle the underlying question.",
+  },
+};
+
+function renderNoneHtml(data) {
+  const copy = REASON_COPY[data?.reason] || REASON_COPY.no_material_counter;
+  const examined = typeof data?.examined_claim === "string" && data.examined_claim.trim()
+    ? `<div class="ec-none-examined">
+         <span class="ec-none-examined-label">Examined claim</span>
+         <span class="ec-none-examined-text">${escapeHtml(data.examined_claim.trim())}</span>
+       </div>`
+    : "";
+  return `
+    <section class="ec-section">
+      <p class="ec-label">FlipSide</p>
+      <p class="ec-none-title">${escapeHtml(copy.title)}</p>
+      <p class="ec-none-body">${escapeHtml(copy.body)}</p>
+      ${examined}
+      ${renderFurther(data?.furtherReading)}
+    </section>
     ${renderFeedbackHtml()}`;
 }
 
@@ -650,11 +707,39 @@ const TEMPLATE = `
     }
 
     /* ── States ── */
-    .ec-none-msg {
+    .ec-none-title {
+      margin: 0 0 6px;
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.4;
+      color: var(--ec-text);
+    }
+    .ec-none-body {
       margin: 0;
       font-size: 13px;
-      font-weight: 400;
-      color: var(--ec-green);
+      line-height: 1.6;
+      color: var(--ec-muted);
+    }
+    .ec-none-examined {
+      margin-top: 11px;
+      padding: 8px 10px;
+      background: var(--ec-tint);
+      border-radius: 7px;
+      border-left: 2px solid var(--ec-border);
+    }
+    .ec-none-examined-label {
+      display: block;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.7px;
+      text-transform: uppercase;
+      color: var(--ec-muted);
+      margin-bottom: 2px;
+    }
+    .ec-none-examined-text {
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--ec-text);
     }
     .ec-state {
       display: flex;

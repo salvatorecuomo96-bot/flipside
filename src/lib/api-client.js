@@ -134,10 +134,19 @@ function looseJson(content) {
   return null;
 }
 
-function parseClassification(content) {
-  const p = looseJson(content) || {};
+// Throws on a malformed / structurally-invalid classification so the pipeline
+// surfaces a technical error (retry state) instead of a misleading silence.
+// The required structural field is `analyzable` (must be a real boolean); every
+// other field is optional and safe-defaulted.
+export function parseClassification(content) {
+  const p = looseJson(content);
+  if (!p || typeof p !== "object" || typeof p.analyzable !== "boolean") {
+    const err = new Error("Couldn't read the analysis for this page. Please try again.");
+    err.classifyInvalid = true;
+    throw err;
+  }
   return {
-    analyzable: p.analyzable === true,
+    analyzable: p.analyzable,
     article_type: typeof p.article_type === "string" ? p.article_type : "news",
     core_claim: typeof p.core_claim === "string" ? p.core_claim : "",
     topic: typeof p.topic === "string" ? p.topic : "",

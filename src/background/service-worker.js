@@ -11,6 +11,10 @@
 
 import { classify, synthesize } from "../lib/api-client.js";
 import { fetchSources, rankSources } from "../lib/sources.js";
+import {
+  classificationSilenceReason, synthesisSilenceReason,
+  silenceShowsFurther, silenceExaminedClaim,
+} from "../lib/silence.js";
 
 const PROXY_URL = "https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev";
 const CONF_THRESHOLD = 0.7;
@@ -174,6 +178,8 @@ async function handleAnalyze(payload, onStage = null) {
   }
   const hashCached = await cacheGet(cacheKey);
   if (hashCached) return { ok: true, data: hashCached };
+  const noneCached = await noneCacheGet(cacheKey);
+  if (noneCached) return { ok: true, data: noneCached };
 
   const { apiKey, byokProvider } = await chrome.storage.local.get(["apiKey", "byokProvider"]);
   const provider = byokProvider ?? "groq";
@@ -182,18 +188,20 @@ async function handleAnalyze(payload, onStage = null) {
     // CALL 1 — classify (reuses the result cached by background preanalyze)
     onStage?.("Finding the core claim…");
     const cls = await getClassification(payload);
-    if (!cls.analyzable) return await saveAndReturn(cacheKey, payload.url, { result_type: "none", reason: "not_analyzable" });
+    if (!cls.analyzable) {
+      return await saveAndReturn(cacheKey, payload.url, buildNoneData(classificationSilenceReason(cls), cls, null));
+    }
 
     // RETRIEVAL — real evidence
     onStage?.("Searching credible evidence…");
     const all = await fetchSources(cls.research_query || payload.title, cls.topic, payload.url || "", cls.secondary_topic || "");
+    if (all.length === 0) {
+      return await saveAndReturn(cacheKey, payload.url, buildNoneData("no_sources_returned", cls, null));
+    }
 
     const usable = rankSources(all.filter(s => s.usable), cls.research_query || payload.title, MAX_TOTAL_USABLE, cls.claim_type, cls.required_geography);
     if (usable.length === 0) {
-      return await saveAndReturn(cacheKey, payload.url, {
-        result_type: "none", reason: "insufficient_evidence",
-        furtherReading: trimSources(all, 5),
-      });
+      return await saveAndReturn(cacheKey, payload.url, buildNoneData("no_usable_evidence", cls, all));
     }
 
     // CALL 2 — synthesize from evidence
@@ -203,10 +211,7 @@ async function handleAnalyze(payload, onStage = null) {
       articleType: cls.article_type, coreClaim: cls.core_claim, claimType: cls.claim_type, evidence: usable,
     });
     if (synth.result_type === "none") {
-      return await saveAndReturn(cacheKey, payload.url, {
-        result_type: "none", reason: synth.reason || "no_material_finding",
-        furtherReading: trimSources(all, 5),
-      });
+      return await saveAndReturn(cacheKey, payload.url, buildNoneData(synthesisSilenceReason(synth.reason, cls), cls, all));
     }
 
     // VALIDATE provenance — keep only cited sources whose quote is really present
@@ -225,9 +230,7 @@ async function handleAnalyze(payload, onStage = null) {
       const empSummary = empShown.length ? synth.empirical_counter.summary : "";
       const ctxSummary = ctxShown.length ? synth.additional_context.summary : "";
       if (!empSummary && !ctxSummary) {
-        return await saveAndReturn(cacheKey, payload.url, {
-          result_type: "none", reason: "no_material_finding", furtherReading: trimSources(all, 5),
-        });
+        return await saveAndReturn(cacheKey, payload.url, buildNoneData(synthesisSilenceReason(synth.reason, cls), cls, all));
       }
       const usedUrls = new Set([...empShown, ...ctxShown].map((s) => s.url));
       return await saveAndReturn(cacheKey, payload.url, {
@@ -284,6 +287,20 @@ function validateShown(usedSources, byId) {
   return shown;
 }
 
+// Build a "none" result with an articulated reason. The reason code is canonical
+// (from silence.js); the panel maps it to fixed copy. examined_claim and further
+// reading are attached only where the reason warrants them.
+function buildNoneData(reason, cls, allSources) {
+  const data = { result_type: "none", reason };
+  const claim = silenceExaminedClaim(reason, cls?.core_claim);
+  if (claim) data.examined_claim = claim;
+  if (silenceShowsFurther(reason) && Array.isArray(allSources) && allSources.length) {
+    const fr = trimSources(allSources, 5);
+    if (fr.length) data.furtherReading = fr;
+  }
+  return data;
+}
+
 function pickFields(s) { return { title: s.title, url: s.url, publisher: s.publisher, kind: s.kind }; }
 function trimSources(arr, n) { return dedupByUrl(arr).slice(0, n).map(pickFields); }
 function dedupByUrl(arr) {
@@ -293,7 +310,12 @@ function dedupByUrl(arr) {
 }
 
 async function saveAndReturn(cacheKey, url, data) {
-  if (data.result_type !== "none") {
+  if (data.result_type === "none") {
+    // Articulated silences expire fast (24h) and live in their own store — a
+    // "none" should never occupy the 30-day positive-result cache, and a later
+    // retrieval improvement should be able to supersede it within a day.
+    await noneCacheSet(cacheKey, data);
+  } else {
     await Promise.all([
       cacheSet(cacheKey, data),
       url ? urlCacheSet(url, data) : Promise.resolve(),
@@ -336,6 +358,28 @@ async function urlCacheSet(url, data) {
   const keys = Object.keys(store);
   if (keys.length > 200) { keys.sort((a, b) => store[a].ts - store[b].ts); for (const k of keys.slice(0, keys.length - 200)) delete store[k]; }
   await chrome.storage.local.set({ [URL_CACHE_KEY]: store });
+}
+
+// --- "None" result cache (24h) ----------
+// Separate from the 30-day positive cache: articulated silences are cheap to
+// recompute and we want them to expire quickly so retrieval improvements take
+// effect within a day rather than sticking for a month.
+const NONE_CACHE_KEY = "noneCache";
+const NONE_CACHE_MAX = 150;
+const NONE_TTL_MS = 1000 * 60 * 60 * 24; // 24h
+
+async function noneCacheGet(key) {
+  const store = (await chrome.storage.local.get(NONE_CACHE_KEY))[NONE_CACHE_KEY] || {};
+  const entry = store[key];
+  if (!entry || Date.now() - entry.ts > NONE_TTL_MS) return null;
+  return entry.data;
+}
+async function noneCacheSet(key, data) {
+  const store = (await chrome.storage.local.get(NONE_CACHE_KEY))[NONE_CACHE_KEY] || {};
+  store[key] = { data, ts: Date.now() };
+  const keys = Object.keys(store);
+  if (keys.length > NONE_CACHE_MAX) { keys.sort((a, b) => store[a].ts - store[b].ts); for (const k of keys.slice(0, keys.length - NONE_CACHE_MAX)) delete store[k]; }
+  await chrome.storage.local.set({ [NONE_CACHE_KEY]: store });
 }
 
 // --- Classification cache ----------

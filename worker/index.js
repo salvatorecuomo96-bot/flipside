@@ -122,7 +122,12 @@ If result exists (empirical or normative claim):
 {"result_type":"counter_perspective|additional_context","headline":"<≤9-word title>","summary":"<3–6 sentences — must name the article's specific implied conclusion and argue directly against it>","core_claims":["<article's load-bearing claims, 1–3 items>"],"confidence":<0.0-1.0>,"used_sources":[{"id":"<evidence id>","supports_sentence":"<the sentence it backs>","evidence_quote":"<verbatim phrase from that evidence_text>"}]}
 If CLAIM_TYPE is mixed (two-part — each half cites ONLY its own source kind; every used_source still needs a verbatim evidence_quote):
 {"result_type":"mixed","headline":"<≤9-word title>","core_claims":["<1–3 items>"],"empirical_counter":{"summary":"<challenge the factual premise; ACADEMIC sources only>","confidence":<0.0-1.0>,"used_sources":[{"id":"<...>","supports_sentence":"<...>","evidence_quote":"<verbatim>"}]},"additional_context":{"summary":"<frame the moral debate; REFERENCE sources only>","used_sources":[{"id":"<...>","supports_sentence":"<...>","evidence_quote":"<verbatim>"}]}}
-If not: {"result_type":"none","reason":"<short reason>"}`;
+If no credible result, choose the SINGLE most accurate reason code:
+{"result_type":"none","reason":"<evidence_off_target|evidence_too_weak|no_material_counter|normative_unresolved>"}
+  • evidence_off_target — the sources cover the broader topic but none addresses THIS article's specific claim.
+  • evidence_too_weak — some on-point evidence exists but is too thin or preliminary to support a credible challenge without overstating it.
+  • no_material_counter — the evidence is on-point and adequate, but it neither challenges the conclusion nor adds context that changes interpretation.
+  • normative_unresolved — the claim is moral/theological and no reference evidence could illuminate the specific debate.`;
 
 function buildClassifyMessages({ title, text, url }) {
   const user = [
@@ -248,7 +253,7 @@ async function generate(env, messages) {
 
 // --- KV cache ----------------------------------------------------------------
 const CACHE_TTL = 6 * 60 * 60;
-const CACHE_KEY_VERSION = "v13";
+const CACHE_KEY_VERSION = "v14";
 
 function buildCacheKey(stage, parts) {
   let h = 5381;

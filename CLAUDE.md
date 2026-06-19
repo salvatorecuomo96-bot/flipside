@@ -156,7 +156,7 @@ Invalid key → falls back to free proxy automatically.
 - First deploy on a new machine: `cd worker && npx wrangler login && npx wrangler deploy`
 - Secrets (already set server-side, don't re-add unless rotating):
   `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `SAMBANOVA_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`
-- KV cache version: `v13` — bump `CACHE_KEY_VERSION` in `worker/index.js` whenever a prompt changes
+- KV cache version: `v14` — bump `CACHE_KEY_VERSION` in `worker/index.js` whenever a prompt changes
 - Provider chain: Groq → Cerebras → SambaNova → Gemini → OpenRouter → Workers AI
 - Worker and `src/lib/prompt.js` must stay in sync — CLASSIFY_PROMPT and SYNTHESIS_PROMPT are mirrored byte-for-byte
 - Privacy policy served at `/privacy` route on the worker — no external hosting needed
