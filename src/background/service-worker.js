@@ -140,16 +140,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg?.type === "FEEDBACK") {
     const { url, rating } = msg;
-    if (!url || (rating !== "up" && rating !== "down")) return false;
+    if (!url) return false;
     chrome.storage.local.get("feedbackCache").then(({ feedbackCache = {} }) => {
-      feedbackCache[url] = rating;
+      if (rating === null) delete feedbackCache[url];
+      else if (rating === "up" || rating === "down") feedbackCache[url] = rating;
       chrome.storage.local.set({ feedbackCache });
     });
-    fetch(PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Origin": `chrome-extension://${chrome.runtime.id}` },
-      body: JSON.stringify({ stage: "feedback", url, rating }),
-    }).catch(() => {});
+    if (rating === "up" || rating === "down") {
+      fetch(PROXY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Origin": `chrome-extension://${chrome.runtime.id}` },
+        body: JSON.stringify({ stage: "feedback", url, rating }),
+      }).catch(() => {});
+    }
     return false;
   }
   if (msg?.type === "GET_FEEDBACK") {

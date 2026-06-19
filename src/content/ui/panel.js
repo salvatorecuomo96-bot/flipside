@@ -325,22 +325,28 @@ function wireFeedback(shadow, url) {
     if (rating === "down") downBtn.classList.add("ec-fb-selected");
   });
   upBtn.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "up" });
-    upBtn.classList.add("ec-fb-selected");
+    const wasSelected = upBtn.classList.contains("ec-fb-selected");
+    upBtn.classList.toggle("ec-fb-selected", !wasSelected);
     downBtn.classList.remove("ec-fb-selected");
+    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: wasSelected ? null : "up" });
   });
   downBtn.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down" });
-    downBtn.classList.add("ec-fb-selected");
+    const wasSelected = downBtn.classList.contains("ec-fb-selected");
+    downBtn.classList.toggle("ec-fb-selected", !wasSelected);
     upBtn.classList.remove("ec-fb-selected");
+    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: wasSelected ? null : "down" });
   });
 }
 
 function renderFeedbackHtml() {
   return `<div class="ec-feedback">
     <span class="ec-feedback-label">Helpful?</span>
-    <button class="ec-feedback-up" title="Yes">👍</button>
-    <button class="ec-feedback-down" title="No">👎</button>
+    <button class="ec-feedback-up" title="Yes">
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667L6 10.333z"/></svg>
+    </button>
+    <button class="ec-feedback-down" title="No">
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M18 9.5a1.5 1.5 0 11-3 0v-6a1.5 1.5 0 013 0v6zM14 9.667v-5.43a2 2 0 00-1.105-1.79l-.05-.025A4 4 0 0011.055 2H5.64a2 2 0 00-1.962 1.608l-1.2 6A2 2 0 004.44 12H8v4a2 2 0 002 2 1 1 0 001-1v-.667L14 9.667z"/></svg>
+    </button>
   </div>`;
 }
 
@@ -701,7 +707,7 @@ const TEMPLATE = `
     .ec-feedback {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       margin-top: 14px;
       padding-top: 12px;
       border-top: 1px solid var(--ec-border);
@@ -714,15 +720,41 @@ const TEMPLATE = `
     .ec-feedback-up, .ec-feedback-down {
       all: unset;
       cursor: pointer;
-      font-size: 15px;
-      padding: 3px 7px;
-      border-radius: 6px;
-      line-height: 1;
-      opacity: 0.4;
-      transition: opacity 0.12s, background 0.12s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      color: var(--ec-muted);
+      border: 1px solid transparent;
+      transition: color 0.15s, background 0.15s, border-color 0.15s, transform 0.1s;
     }
-    .ec-feedback-up:hover, .ec-feedback-down:hover { opacity: 1; background: var(--ec-tint); }
-    .ec-feedback-up.ec-fb-selected, .ec-feedback-down.ec-fb-selected { opacity: 1; background: var(--ec-tint); }
+    .ec-feedback-up svg, .ec-feedback-down svg {
+      width: 16px; height: 16px; display: block;
+    }
+    .ec-feedback-up:hover {
+      color: var(--ec-green);
+      background: rgba(52, 211, 153, 0.1);
+      border-color: rgba(52, 211, 153, 0.25);
+    }
+    .ec-feedback-down:hover {
+      color: var(--ec-red);
+      background: rgba(248, 113, 113, 0.1);
+      border-color: rgba(248, 113, 113, 0.25);
+    }
+    .ec-feedback-up.ec-fb-selected {
+      color: var(--ec-green);
+      background: rgba(52, 211, 153, 0.15);
+      border-color: rgba(52, 211, 153, 0.4);
+      transform: scale(1.08);
+    }
+    .ec-feedback-down.ec-fb-selected {
+      color: var(--ec-red);
+      background: rgba(248, 113, 113, 0.15);
+      border-color: rgba(248, 113, 113, 0.4);
+      transform: scale(1.08);
+    }
 
     /* ── Footer ── */
     .ec-footer {
