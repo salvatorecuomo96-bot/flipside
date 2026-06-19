@@ -1,0 +1,6 @@
+{
+  "done": ["C1","C2","C3","C4","C5","C6","C7"],
+  "lastRun": "2026-06-20T00:00:00.000Z",
+  "finished": true,
+  "notes": "All commits complete. 9/9 tests passing. Worker deployed with v15 KV dual-namespace + waitUntil fix. Strict provenance gate active (no resurrection fallback). Extraction completeness check + Try Again button live."
+}

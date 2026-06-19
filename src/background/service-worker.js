@@ -11,6 +11,8 @@
 
 import { classify, synthesize } from "../lib/api-client.js";
 import { fetchSources, rankSources } from "../lib/sources.js";
+import { generateCitationToken } from "../lib/evidence-id.js";
+import { checkProvenance } from "../lib/provenance.js";
 import {
   classificationSilenceReason, synthesisSilenceReason,
   silenceShowsFurther, silenceExaminedClaim,
@@ -168,9 +170,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
+// --- Extraction completeness check ----------
+// Runs before classification. Detects paywalled or truncated pages that lack
+// enough text for meaningful analysis. Returns { ok: true } or
+// { ok: false, reason, paywall_detected }.
+const PAYWALL_RE = /subscribe\s+to\s+read|subscription\s+required|sign\s+in\s+to\s+(read|continue)|unlock\s+this\s+article|premium\s+(content|article)|members?\s+only|already\s+a\s+subscriber|continue\s+reading\s+(with|below|for)|read\s+the\s+full\s+(story|article)|get\s+full\s+access/i;
+
+function checkExtractionCompleteness(text, paywallDetected) {
+  const t = (text || "").trim();
+  const wordCount = t.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 80) return { ok: false, reason: "too_short" };
+  if (paywallDetected || (wordCount < 350 && PAYWALL_RE.test(t))) {
+    return { ok: false, reason: "paywall_detected", paywall_detected: true };
+  }
+  return { ok: true };
+}
+
 // --- The pipeline ----------
 async function handleAnalyze(payload, onStage = null) {
   const cacheKey = hashStr((payload.url || "") + "\n" + (payload.text || ""));
+
+  // Extraction completeness — checked before any model call. isPastedText skips
+  // this gate: the user has already supplied text they know is complete.
+  if (!payload.isPastedText) {
+    const extractionCached = await extractionCacheGet(cacheKey);
+    if (extractionCached) return { ok: true, data: extractionCached };
+    const completeness = checkExtractionCompleteness(payload.text, payload.paywallDetected);
+    if (!completeness.ok) {
+      const incompleteData = {
+        result_type: "incomplete_article",
+        reason: completeness.reason,
+        paywall_detected: completeness.paywall_detected ?? false,
+        retryable: false,
+        paste_fallback: true,
+      };
+      await extractionCacheSet(cacheKey, incompleteData);
+      return { ok: true, data: incompleteData };
+    }
+  }
 
   if (payload.url) {
     const urlCached = await urlCacheGet(payload.url);
@@ -178,8 +215,10 @@ async function handleAnalyze(payload, onStage = null) {
   }
   const hashCached = await cacheGet(cacheKey);
   if (hashCached) return { ok: true, data: hashCached };
-  const noneCached = await noneCacheGet(cacheKey);
-  if (noneCached) return { ok: true, data: noneCached };
+  if (!payload.bypassNoneCache) {
+    const noneCached = await noneCacheGet(cacheKey);
+    if (noneCached) return { ok: true, data: noneCached };
+  }
 
   const { apiKey, byokProvider } = await chrome.storage.local.get(["apiKey", "byokProvider"]);
   const provider = byokProvider ?? "groq";
@@ -194,8 +233,14 @@ async function handleAnalyze(payload, onStage = null) {
 
     // RETRIEVAL — real evidence
     onStage?.("Searching credible evidence…");
-    const all = await fetchSources(cls.research_query || payload.title, cls.topic, payload.url || "", cls.secondary_topic || "");
+    const { sources: all, diagnostics, evidenceFingerprint } = await fetchSources(cls.research_query || payload.title, cls.topic, payload.url || "", cls.secondary_topic || "");
     if (all.length === 0) {
+      // If every evidence-bearing feed failed it's likely an API outage, not a
+      // genuine topic gap. Throw so the pipeline surfaces a retry error rather
+      // than caching a misleading "no sources found" silence.
+      if (diagnostics.evidenceAttempted >= 2 && diagnostics.evidenceFailed === diagnostics.evidenceAttempted) {
+        throw new Error("Evidence sources are temporarily unavailable. Please try again in a moment.");
+      }
       return await saveAndReturn(cacheKey, payload.url, buildNoneData("no_sources_returned", cls, null));
     }
 
@@ -204,11 +249,19 @@ async function handleAnalyze(payload, onStage = null) {
       return await saveAndReturn(cacheKey, payload.url, buildNoneData("no_usable_evidence", cls, all));
     }
 
+    // Assign stable citation tokens — collision-checked across the prompt's source set.
+    const tokenSet = new Set();
+    for (const s of usable) {
+      s.citationToken = s.stableKey ? generateCitationToken(s.stableKey, tokenSet) : s.id;
+      if (s.stableKey) tokenSet.add(s.citationToken);
+    }
+
     // CALL 2 — synthesize from evidence
     onStage?.("Weighing the evidence…");
     const synth = await synthesize({
       apiKey, provider, article: payload,
-      articleType: cls.article_type, coreClaim: cls.core_claim, claimType: cls.claim_type, evidence: usable,
+      articleType: cls.article_type, coreClaim: cls.core_claim, claimType: cls.claim_type,
+      evidence: usable, evidenceFingerprint,
     });
     if (synth.result_type === "none") {
       return await saveAndReturn(cacheKey, payload.url, buildNoneData(synthesisSilenceReason(synth.reason, cls), cls, all));
@@ -230,7 +283,11 @@ async function handleAnalyze(payload, onStage = null) {
       const empSummary = empShown.length ? synth.empirical_counter.summary : "";
       const ctxSummary = ctxShown.length ? synth.additional_context.summary : "";
       if (!empSummary && !ctxSummary) {
-        return await saveAndReturn(cacheKey, payload.url, buildNoneData(synthesisSilenceReason(synth.reason, cls), cls, all));
+        // Both blocks stripped by the source-kind firewall: the model produced
+        // something but all cited sources were wrong-kind. evidence_too_weak is
+        // the most accurate public code — the model may have found something,
+        // but the output failed the code-level provenance checks.
+        return await saveAndReturn(cacheKey, payload.url, buildNoneData("evidence_too_weak", cls, all));
       }
       const usedUrls = new Set([...empShown, ...ctxShown].map((s) => s.url));
       return await saveAndReturn(cacheKey, payload.url, {
@@ -244,6 +301,9 @@ async function handleAnalyze(payload, onStage = null) {
     }
 
     const shown = validateShown(synth.used_sources, byId);
+    if (shown.length === 0) {
+      return await saveAndReturn(cacheKey, payload.url, buildNoneData("evidence_too_weak", cls, all));
+    }
     const shownUrls = new Set(shown.map((s) => s.url));
     const data = {
       result_type: synth.result_type,
@@ -260,31 +320,19 @@ async function handleAnalyze(payload, onStage = null) {
   }
 }
 
-// Lenient verbatim check: the model's quote must actually appear in the abstract
-// (whitespace/case-normalized). Paraphrases are rejected — that's intentional.
-function quoteAppears(quote, evidence) {
-  const q = normalize(quote);
-  const hay = normalize(evidence);
-  if (!hay) return false;
-  if (q.length < 8) return false;            // too short to verify → reject
-  return hay.includes(q.slice(0, Math.min(q.length, 50)));
-}
-function normalize(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
-
-// Provenance gate for one used_sources list: keep cited sources whose quote is
-// really present; if none pass, fall back to the cited sources (synthesis still
-// reasoned over real abstracts) rather than showing a perspective with no sources.
+// Provenance gate — uses the full checkProvenance matcher (token-span, ellipsis,
+// normalization). Resurrection fallback removed: if all quotes fail, the result
+// is evidence_too_weak rather than silently showing unverified citations.
 function validateShown(usedSources, byId) {
   const used = Array.isArray(usedSources) ? usedSources : [];
   const validated = [];
   for (const u of used) {
     const src = byId.get(u.id);
     if (!src) continue;
-    if (quoteAppears(u.evidence_quote, src.evidence_text)) validated.push(src);
+    const { matched } = checkProvenance(u.evidence_quote ?? "", src.evidence_text ?? "");
+    if (matched) validated.push(src);
   }
-  let shown = dedupByUrl(validated);
-  if (shown.length === 0) shown = dedupByUrl(used.map((u) => byId.get(u.id)).filter(Boolean));
-  return shown;
+  return dedupByUrl(validated);
 }
 
 // Build a "none" result with an articulated reason. The reason code is canonical
@@ -360,23 +408,30 @@ async function urlCacheSet(url, data) {
   await chrome.storage.local.set({ [URL_CACHE_KEY]: store });
 }
 
-// --- "None" result cache (24h) ----------
-// Separate from the 30-day positive cache: articulated silences are cheap to
-// recompute and we want them to expire quickly so retrieval improvements take
-// effect within a day rather than sticking for a month.
+// --- "None" result cache (reason-specific TTL) ----------
+// Separate from the 30-day positive cache. TTLs are shorter for retrieval-stage
+// silence so a transient API failure or new source indexing takes effect quickly.
+// Retrieval codes: no_sources_returned 2h, no_usable_evidence 6h.
+// All other codes (classification + synthesis): 24h.
 const NONE_CACHE_KEY = "noneCache";
 const NONE_CACHE_MAX = 150;
-const NONE_TTL_MS = 1000 * 60 * 60 * 24; // 24h
+const HOUR_MS = 1000 * 60 * 60;
+
+function noneTtl(reason) {
+  if (reason === "no_sources_returned") return 2 * HOUR_MS;
+  if (reason === "no_usable_evidence")  return 6 * HOUR_MS;
+  return 24 * HOUR_MS;
+}
 
 async function noneCacheGet(key) {
   const store = (await chrome.storage.local.get(NONE_CACHE_KEY))[NONE_CACHE_KEY] || {};
   const entry = store[key];
-  if (!entry || Date.now() - entry.ts > NONE_TTL_MS) return null;
+  if (!entry || Date.now() - entry.ts > (entry.ttl ?? 24 * HOUR_MS)) return null;
   return entry.data;
 }
 async function noneCacheSet(key, data) {
   const store = (await chrome.storage.local.get(NONE_CACHE_KEY))[NONE_CACHE_KEY] || {};
-  store[key] = { data, ts: Date.now() };
+  store[key] = { data, ts: Date.now(), ttl: noneTtl(data.reason) };
   const keys = Object.keys(store);
   if (keys.length > NONE_CACHE_MAX) { keys.sort((a, b) => store[a].ts - store[b].ts); for (const k of keys.slice(0, keys.length - NONE_CACHE_MAX)) delete store[k]; }
   await chrome.storage.local.set({ [NONE_CACHE_KEY]: store });
@@ -405,4 +460,25 @@ function hashStr(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
   return String(h >>> 0);
+}
+
+// --- Extraction state cache ----------
+// Keyed by hash(url + text) — same as the analysis cache — so a page that later
+// becomes fully readable (soft paywall clears, user logs in) produces a different
+// hash and re-evaluates instead of staying blocked for the full TTL.
+const EXTRACTION_CACHE_KEY = "extractionCache";
+const EXTRACTION_CACHE_TTL_MS = 2 * HOUR_MS;
+
+async function extractionCacheGet(key) {
+  const store = (await chrome.storage.local.get(EXTRACTION_CACHE_KEY))[EXTRACTION_CACHE_KEY] || {};
+  const entry = store[key];
+  if (!entry || Date.now() - entry.ts > EXTRACTION_CACHE_TTL_MS) return null;
+  return entry.data;
+}
+async function extractionCacheSet(key, data) {
+  const store = (await chrome.storage.local.get(EXTRACTION_CACHE_KEY))[EXTRACTION_CACHE_KEY] || {};
+  store[key] = { data, ts: Date.now() };
+  const keys = Object.keys(store);
+  if (keys.length > 100) { keys.sort((a, b) => store[a].ts - store[b].ts); for (const k of keys.slice(0, keys.length - 100)) delete store[k]; }
+  await chrome.storage.local.set({ [EXTRACTION_CACHE_KEY]: store });
 }

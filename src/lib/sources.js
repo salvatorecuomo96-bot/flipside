@@ -13,6 +13,8 @@
 //                           ClinicalTrials.gov · World Bank · EPA · NBER · Wikipedia
 // Further-reading-only feeds: Google News · GDELT
 
+import { stableSourceKey, buildEvidenceFingerprint } from "./evidence-id.js";
+
 const TIMEOUT_MS = 8000;
 const MAILTO = "flipside-extension@proton.me";
 const MIN_EVIDENCE_CHARS = 80; // shorter than this isn't real evidence
@@ -28,44 +30,64 @@ const CAP = {
  * @param {string} topic      topic tag (health|science|law|finance|government|...)
  * @param {string} articleUrl URL of the article (to filter self-links)
  * @param {string} secondaryTopic optional second topic for cross-domain claims
- * @returns {Promise<Source[]>}  each: {id,title,url,publisher,kind,evidence_text,citationCount,year,usable}
+ * @returns {Promise<{sources: Source[], diagnostics: RetrievalDiagnostics}>}
+ *   sources — each: {id,title,url,publisher,kind,evidence_text,citationCount,year,usable}
+ *   diagnostics — {attempted, succeeded, failed, evidenceAttempted, evidenceFailed}
  */
 export async function fetchSources(query, topic = "", articleUrl = "", secondaryTopic = "") {
   const q = (query || "").trim();
-  if (!q) return [];
+  if (!q) return { sources: [], diagnostics: { attempted: 0, succeeded: 0, failed: 0, evidenceAttempted: 0, evidenceFailed: 0 } };
   const articleDomain = extractDomain(articleUrl);
 
   const jobs = [
-    cap(fetchOpenAlex(q),    CAP.openAlex),
-    cap(fetchNews(q),        CAP.news),
-    cap(fetchGdelt(q),       CAP.gdelt),
-    cap(fetchWikipedia(q),   CAP.wikipedia),
+    cap("openAlex",  true,  fetchOpenAlex(q),  CAP.openAlex),
+    cap("news",      false, fetchNews(q),       CAP.news),
+    cap("gdelt",     false, fetchGdelt(q),      CAP.gdelt),
+    cap("wikipedia", true,  fetchWikipedia(q),  CAP.wikipedia),
   ];
   // Fire each topic's specialist feeds. A feed shared by both topics runs once.
   const fired = new Set();
   addTopicJobs(jobs, q, topic, fired, "primary");
   addTopicJobs(jobs, q, secondaryTopic, fired, "secondary");
 
-  const pools = await Promise.all(jobs);
+  const results = await Promise.all(jobs);
 
   // Rank evidence-bearing kinds first; reference/news (usually no abstract) last.
   const ranked = [];
   const order = ["academic", "government", "legal", "preprint", "reference", "news"];
-  for (const kind of order) for (const pool of pools) ranked.push(...pool.filter(s => s.kind === kind));
-  for (const pool of pools) for (const s of pool) if (!order.includes(s.kind)) ranked.push(s);
+  for (const kind of order) for (const r of results) ranked.push(...r.items.filter(s => s.kind === kind));
+  for (const r of results) for (const s of r.items) if (!order.includes(s.kind)) ranked.push(s);
 
-  // De-dupe by URL, drop self-links, assign stable ids, compute usable.
+  // Retrieval health: lets the service worker distinguish a genuine empty result
+  // from a temporary API outage without hardcoding knowledge of individual feeds.
+  const evidenceResults = results.filter(r => r.evidenceBearing);
+  const diagnostics = {
+    attempted:         results.length,
+    succeeded:         results.filter(r => r.ok).length,
+    failed:            results.filter(r => !r.ok).length,
+    evidenceAttempted: evidenceResults.length,
+    evidenceFailed:    evidenceResults.filter(r => !r.ok).length,
+  };
+
+  // De-dupe by URL, drop self-links, collect candidates.
   const seen = new Set();
-  const out = [];
-  let n = 0;
+  const candidates = [];
   for (const s of ranked) {
     if (!s.url) continue;
     const key = s.url.replace(/[#?].*$/, "").replace(/\/+$/, "").toLowerCase();
     if (seen.has(key)) continue;
     if (articleDomain && extractDomain(s.url) === articleDomain) continue;
     seen.add(key);
+    candidates.push(s);
+    if (candidates.length >= 16) break;
+  }
+
+  // Build output with stable source keys (async — runs in parallel).
+  let n = 0;
+  const out = await Promise.all(candidates.map(async s => {
     const evidence = (s.evidence_text || "").trim();
-    out.push({
+    const sKey = await stableSourceKey(s);
+    return {
       id: "s" + (++n),
       title: s.title,
       url: s.url,
@@ -77,10 +99,19 @@ export async function fetchSources(query, topic = "", articleUrl = "", secondary
       origin: s.origin || "primary",
       ...ageTag(s.year ?? null),
       usable: evidence.length >= MIN_EVIDENCE_CHARS,
-    });
-    if (out.length >= 16) break;
-  }
-  return out;
+      stableKey: sKey,
+    };
+  }));
+
+  // Evidence fingerprint over usable sources — used as a synthesis cache key
+  // segment in the Worker so results are tied to the specific evidence set, not
+  // just the article URL.
+  const usableForFp = out.filter(s => s.usable).map(s => ({
+    stableKey: s.stableKey, kind: s.kind, year: s.year, evidence_text: s.evidence_text,
+  }));
+  const evidenceFingerprint = await buildEvidenceFingerprint(usableForFp);
+
+  return { sources: out, diagnostics, evidenceFingerprint };
 }
 
 // ─── Global Relevance Ranker ──────────────────────────────────────────────────
@@ -243,7 +274,7 @@ export function rankSources(sources, query, limit = 6, claimType = "empirical", 
 function addTopicJobs(jobs, q, topic, fired, origin = "primary") {
   const t = (topic || "").toLowerCase();
   if (!t) return;
-  const add = (key, makeJob, n) => { if (fired.has(key)) return; fired.add(key); jobs.push(cap(makeJob(), n, origin)); };
+  const add = (key, makeJob, n) => { if (fired.has(key)) return; fired.add(key); jobs.push(cap(key, true, makeJob(), n, origin)); };
   if (["health", "medicine", "science"].includes(t)) {
     add("europePMC",      () => fetchEuropePMC(q),      CAP.europePMC);
     add("clinicalTrials", () => fetchClinicalTrials(q), CAP.clinicalTrials);
@@ -262,9 +293,17 @@ function addTopicJobs(jobs, q, topic, fired, origin = "primary") {
   }
 }
 
-async function cap(promise, n, origin = "primary") {
-  try { const r = await promise; return Array.isArray(r) ? r.slice(0, n).map(s => ({ ...s, origin })) : []; }
-  catch { return []; }
+async function cap(name, evidenceBearing, promise, n, origin = "primary") {
+  try {
+    const r = await promise;
+    const items = Array.isArray(r) ? r.slice(0, n).map(s => ({ ...s, origin })) : [];
+    return { name, evidenceBearing, ok: true, items, errorType: null };
+  } catch (err) {
+    let errorType = "error";
+    if (err?.name === "AbortError") errorType = "timeout";
+    else if (/^\d+$/.test(err?.message)) errorType = `http_${err.message}`;
+    return { name, evidenceBearing, ok: false, items: [], errorType };
+  }
 }
 
 // Code-level temporal label, precomputed once here (client side) so the client

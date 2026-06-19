@@ -11,7 +11,7 @@ export function getPanel() {
   return controller;
 }
 
-export function mountPanel(onAnalyze) {
+export function mountPanel() {
   if (controller) return controller;
 
   const host = document.createElement("div");
@@ -45,7 +45,6 @@ export function mountPanel(onAnalyze) {
   shadow.querySelector(".ec-byok-btn").addEventListener("click", () => {
     chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
   });
-  shadow.querySelector(".ec-paste-btn").addEventListener("click", () => api.renderPasteMode());
 
   const api = {
     host,
@@ -104,45 +103,42 @@ export function mountPanel(onAnalyze) {
         }, 1000);
       }
     },
-    renderResult(data, url) {
+    renderResult(data, url, onRetry) {
       inErrorState = false;
       clearCountdown();
       body.innerHTML = renderResultHtml(data);
       wireFeedback(shadow, url || "");
+      if (data?.result_type === "none" && typeof onRetry === "function") {
+        const retryBtn = shadow.querySelector(".ec-retry-btn");
+        if (retryBtn) retryBtn.addEventListener("click", onRetry);
+      }
     },
-    renderPasteMode() {
+    renderIncomplete(onPaste) {
       inErrorState = false;
       clearCountdown();
       body.innerHTML = `
-        <div class="ec-paste-mode">
-          <p class="ec-label">Paste article text</p>
-          <textarea class="ec-paste-area" placeholder="Paste any text here to analyze it…" spellcheck="false"></textarea>
-          <div class="ec-paste-actions">
+        <section class="ec-section">
+          <p class="ec-label">FlipSide</p>
+          <p class="ec-none-title">Couldn't access enough of this article</p>
+          <p class="ec-none-body">This page may be behind a paywall or showing only a preview. FlipSide needs the full article text to work.</p>
+          <button class="ec-paste-trigger">✎ Paste article text</button>
+        </section>`;
+      shadow.querySelector(".ec-paste-trigger").addEventListener("click", () => {
+        body.innerHTML = `
+          <section class="ec-section">
+            <p class="ec-label">FlipSide</p>
+            <p class="ec-none-title">Paste the full article text</p>
+            <textarea class="ec-paste-area" placeholder="Paste the article text here…" rows="8"></textarea>
             <button class="ec-paste-submit">Analyze</button>
-            <span class="ec-paste-hint"></span>
-          </div>
-        </div>`;
-      shadow.querySelector(".ec-paste-submit").addEventListener("click", async () => {
-        const text = shadow.querySelector(".ec-paste-area").value.trim();
-        const hint = shadow.querySelector(".ec-paste-hint");
-        if (text.length < 200) {
-          hint.textContent = "Paste at least a paragraph of text.";
-          return;
-        }
-        api.renderLoading();
-        try {
-          if (onAnalyze) {
-            const res = await onAnalyze({ title: "(pasted text)", text, url: "" }, api);
-            if (res?.ok) api.renderResult(res.data);
-            else api.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
+          </section>`;
+        shadow.querySelector(".ec-paste-submit").addEventListener("click", () => {
+          const text = (shadow.querySelector(".ec-paste-area").value || "").trim();
+          if (text.split(/\s+/).filter(Boolean).length < 80) {
+            shadow.querySelector(".ec-paste-area").placeholder = "Please paste more text — this doesn't look like a full article.";
+            return;
           }
-        } catch (err) {
-          api.renderError(
-            err?.message === "client-timeout"
-              ? "Timed out — close and try again."
-              : "Couldn't reach the background service."
-          );
-        }
+          if (typeof onPaste === "function") onPaste(text);
+        });
       });
     },
   };
@@ -226,8 +222,8 @@ export const REASON_COPY = {
     body: "We found related sources, but could not retrieve enough of their content to evaluate the claim reliably.",
   },
   opinion_no_evidence_basis: {
-    title: "Opinion piece — evidence doesn't change the picture",
-    body: "This is an opinion article. The available research doesn't materially change how a reader should evaluate the author's argument.",
+    title: "Opinion article — no evidence-based challenge found",
+    body: "The available evidence did not materially change how the article's central argument should be evaluated.",
   },
   evidence_off_target: {
     title: "Research found, but not on this claim",
@@ -247,6 +243,10 @@ export const REASON_COPY = {
   },
 };
 
+// Transient silences — likely temporary API or retrieval issues.
+// These get a Try again button; the caller wires up onRetry via renderResult().
+const TRANSIENT_SILENCES = new Set(["no_sources_returned", "no_usable_evidence"]);
+
 function renderNoneHtml(data) {
   const copy = REASON_COPY[data?.reason] || REASON_COPY.no_material_counter;
   const examined = typeof data?.examined_claim === "string" && data.examined_claim.trim()
@@ -255,12 +255,16 @@ function renderNoneHtml(data) {
          <span class="ec-none-examined-text">${escapeHtml(data.examined_claim.trim())}</span>
        </div>`
     : "";
+  const retryBtn = TRANSIENT_SILENCES.has(data?.reason)
+    ? `<button class="ec-retry-btn">Try again</button>`
+    : "";
   return `
     <section class="ec-section">
       <p class="ec-label">FlipSide</p>
       <p class="ec-none-title">${escapeHtml(copy.title)}</p>
       <p class="ec-none-body">${escapeHtml(copy.body)}</p>
       ${examined}
+      ${retryBtn}
       ${renderFurther(data?.furtherReading)}
     </section>
     ${renderFeedbackHtml()}`;
@@ -567,39 +571,6 @@ const TEMPLATE = `
     }
     .ec-perspective:last-of-type { margin-bottom: 0; }
 
-    /* ── Paste mode ── */
-    .ec-paste-mode { display: flex; flex-direction: column; gap: 10px; }
-    .ec-paste-area {
-      width: 100%;
-      min-height: 130px;
-      padding: 10px 11px;
-      background: var(--ec-tint);
-      border: 1px solid var(--ec-border);
-      border-radius: 8px;
-      color: var(--ec-text);
-      font-family: inherit;
-      font-size: 12.5px;
-      line-height: 1.6;
-      resize: vertical;
-      outline: none;
-      box-sizing: border-box;
-    }
-    .ec-paste-area:focus { border-color: var(--ec-accent); }
-    .ec-paste-area::placeholder { color: var(--ec-muted); }
-    .ec-paste-actions { display: flex; align-items: center; gap: 10px; }
-    .ec-paste-submit {
-      all: unset;
-      cursor: pointer;
-      padding: 7px 15px;
-      background: var(--ec-accent);
-      color: #fff;
-      font-size: 12px;
-      font-weight: 600;
-      border-radius: 7px;
-      transition: opacity 0.12s;
-    }
-    .ec-paste-submit:hover { opacity: 0.85; }
-    .ec-paste-hint { font-size: 11px; color: var(--ec-red); }
 
     /* ── Sources (collapsible) ── */
     .ec-sources {
@@ -851,14 +822,49 @@ const TEMPLATE = `
       background: var(--ec-header);
     }
     .ec-footer-sep { font-size: 11px; color: var(--ec-border); }
-    .ec-byok-btn, .ec-paste-btn {
+    .ec-byok-btn {
       all: unset;
       cursor: pointer;
       font-size: 11px;
       color: var(--ec-muted);
       transition: color 0.12s;
     }
-    .ec-byok-btn:hover, .ec-paste-btn:hover { color: var(--ec-accent); }
+    .ec-byok-btn:hover { color: var(--ec-accent); }
+
+    /* ── Incomplete-article paste fallback ── */
+    .ec-paste-trigger, .ec-paste-submit, .ec-retry-btn {
+      all: unset;
+      cursor: pointer;
+      display: inline-block;
+      margin-top: 12px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--ec-border);
+      font-size: 12.5px;
+      color: var(--ec-accent);
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .ec-paste-trigger:hover, .ec-paste-submit:hover, .ec-retry-btn:hover {
+      background: rgba(91, 142, 240, 0.08);
+      border-color: rgba(91, 142, 240, 0.4);
+    }
+    .ec-paste-area {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: var(--ec-tint);
+      border: 1px solid var(--ec-border);
+      border-radius: 8px;
+      color: var(--ec-text);
+      font-size: 12.5px;
+      font-family: inherit;
+      resize: vertical;
+      outline: none;
+      line-height: 1.5;
+    }
+    .ec-paste-area:focus { border-color: var(--ec-accent); }
   </style>
 
   <div class="ec-panel">
@@ -879,7 +885,5 @@ const TEMPLATE = `
     </div>
     <div class="ec-footer">
       <button class="ec-byok-btn">⚙ Connect your API Key</button>
-      <span class="ec-footer-sep">·</span>
-      <button class="ec-paste-btn">✎ Paste text</button>
     </div>
   </div>`;

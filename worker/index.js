@@ -146,7 +146,7 @@ function buildSynthMessages({ title, text, articleType, coreClaim, claimType, ev
   const list = Array.isArray(evidence) ? evidence : [];
   const evidenceBlock = list.length
     ? list.map(e => [
-        `[${e.id}] (${e.kind}${e.citationCount != null ? `, ${e.citationCount} citations` : ""}${e.year ? `, ${e.year}` : ""}) ${e.title}`,
+        `[${e.citationToken ?? e.id}] (${e.kind}${e.year ? `, ${e.year}` : ""}) ${e.title}`,
         ...(e.age_tag ? [e.age_tag] : []),
         `evidence_text: ${e.evidence_text}`,
       ].join("\n")).join("\n\n")
@@ -253,20 +253,34 @@ async function generate(env, messages) {
 
 // --- KV cache ----------------------------------------------------------------
 const CACHE_TTL = 6 * 60 * 60;
-const CACHE_KEY_VERSION = "v14";
+const CACHE_KEY_VERSION_LEGACY = "v14"; // URL-keyed — old clients without citation_schema
+const CACHE_KEY_VERSION_STABLE = "v15"; // content-keyed — clients sending citation_schema:"stable-v1"
 
-function buildCacheKey(stage, parts) {
+// djb2 hash over a multi-part key string
+function djb2(str) {
   let h = 5381;
-  const str = `${stage}\n` + parts.join("\n");
   for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-  return `${CACHE_KEY_VERSION}:${stage}:${h >>> 0}`;
+  return h >>> 0;
 }
+
+// Legacy: URL-based key (v14 namespace). One URL → one cached result.
+function buildLegacyCacheKey(stage, url) {
+  return `${CACHE_KEY_VERSION_LEGACY}:${stage}:${djb2(`${stage}\n${url || ""}`)}`;
+}
+
+// Stable: content-based key (v15 namespace). Same evidence set → same result
+// regardless of URL. Synthesis includes a daily date bucket because TODAY'S DATE
+// is in the synthesis prompt and bounded staleness (6h TTL) is explicitly accepted.
+function buildStableCacheKey(stage, parts) {
+  return `${CACHE_KEY_VERSION_STABLE}:${stage}:${djb2(`${stage}\n` + parts.join("\n"))}`;
+}
+
 async function kvGet(env, key) { if (!env.CACHE) return null; try { return await env.CACHE.get(key); } catch { return null; } }
 async function kvSet(env, key, value, ttl = CACHE_TTL) { if (!env.CACHE) return; try { await env.CACHE.put(key, value, { expirationTtl: ttl }); } catch {} }
 
 // --- Request handler ---------------------------------------------------------
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "GET" && new URL(request.url).pathname === "/privacy") {
       return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlipSide — Privacy Policy</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:680px;margin:48px auto;padding:0 24px;line-height:1.7;color:#1a1a1a}h1{font-size:1.5rem;margin-bottom:4px}p.sub{color:#666;font-size:.9rem;margin-top:0}h2{font-size:1rem;margin-top:2rem}p,ul{font-size:.95rem}ul{padding-left:1.3em}</style></head><body>
 <h1>FlipSide — Privacy Policy</h1><p class="sub">Last updated: June 2026</p>
@@ -312,18 +326,23 @@ export default {
     let body;
     try { body = await request.json(); } catch { return json({ error: "Invalid JSON body" }, 400); }
 
-    const { stage = "classify", title = "", text = "", url = "", articleType = "", coreClaim = "", claimType = "empirical", evidence = [], rating = "" } = body;
+    const {
+      stage = "classify", title = "", text = "", url = "",
+      articleType = "", coreClaim = "", claimType = "empirical",
+      evidence = [], rating = "",
+      citation_schema = "", bypassCache = false, evidenceFingerprint = "",
+    } = body;
 
     // Feedback — handled before text validation (no article text needed)
     if (stage === "feedback") {
       if (rating !== "up" && rating !== "down") return json({ error: "Invalid rating." }, 400);
       if (!url) return json({ error: "URL required." }, 400);
-      const fbKey = `fb:${buildCacheKey("u", [url])}`;
+      const fbKey = `fb:${buildLegacyCacheKey("u", url)}`;
       const existing = await kvGet(env, fbKey);
       let counts = { up: 0, down: 0 };
       if (existing) { try { counts = JSON.parse(existing); } catch {} }
       counts[rating] = (counts[rating] || 0) + 1;
-      await kvSet(env, fbKey, JSON.stringify(counts), 60 * 60 * 24 * 90);
+      ctx.waitUntil(kvSet(env, fbKey, JSON.stringify(counts), 60 * 60 * 24 * 90));
       return json({ ok: true });
     }
 
@@ -335,10 +354,33 @@ export default {
       ? buildClassifyMessages({ title, text, url })
       : buildSynthMessages({ title, text, articleType, coreClaim, claimType, evidence });
 
-    // KV cache — same URL always returns the same result (cross-user consistency)
-    const kvCacheKey = buildCacheKey(stage, [url]);
-    const kvCached = await kvGet(env, kvCacheKey);
-    if (kvCached) return json({ content: kvCached }, 200, { "X-Cache": "HIT", "X-Provider": "cache" });
+    // KV cache — dual namespace:
+    //   v14 (legacy): URL-keyed — old clients without citation_schema
+    //   v15 (stable): content-keyed — clients sending citation_schema:"stable-v1"
+    const stableSchema = citation_schema === "stable-v1";
+    let kvCacheKey;
+    if (stableSchema) {
+      if (stage === "classify") {
+        kvCacheKey = buildStableCacheKey("classify", [(title || "").slice(0, 500), (text || "").slice(0, 9000)]);
+      } else {
+        const dateBucket = new Date().toISOString().slice(0, 10);
+        kvCacheKey = buildStableCacheKey("synth", [
+          (text || "").slice(0, 6000),
+          (coreClaim || "").toLowerCase().trim(),
+          claimType || "empirical",
+          articleType || "news",
+          evidenceFingerprint || "",
+          dateBucket,
+        ]);
+      }
+    } else {
+      kvCacheKey = buildLegacyCacheKey(stage, url);
+    }
+
+    if (!bypassCache) {
+      const kvCached = await kvGet(env, kvCacheKey);
+      if (kvCached) return json({ content: kvCached }, 200, { "X-Cache": "HIT", "X-Provider": "cache" });
+    }
 
     let result;
     try { result = await generate(env, messages); }
@@ -350,11 +392,15 @@ export default {
       return json({ error: err.message ?? "Generation failed." }, 502);
     }
 
-    // Only cache non-"none" results — lets the pipeline retry on bad first runs
+    // Classify: always cache (deterministic, cheap to serve, expensive to generate).
+    // Synthesis: cache only non-"none" results — lets the pipeline retry on bad runs.
     let parsed;
     try { parsed = JSON.parse(result.response); } catch {}
-    if (parsed?.result_type && parsed.result_type !== "none") {
-      kvSet(env, kvCacheKey, result.response); // fire-and-forget
+    const shouldCache =
+      stage === "classify" ||
+      (parsed?.result_type && parsed.result_type !== "none");
+    if (shouldCache) {
+      ctx.waitUntil(kvSet(env, kvCacheKey, result.response));
     }
 
     return json({ content: result.response }, 200, { "X-Provider": result.provider, "X-Chain-Trace": (result.trace || []).join(",") || "none" });

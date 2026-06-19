@@ -16,6 +16,19 @@ let debounceTimer = null;
 let lastHash = "";
 let lastUrl = location.href;
 
+// Quick DOM-level paywall signal. False positives tolerable (shows paste fallback);
+// false negatives tolerable (text-based heuristic in service worker catches them).
+function detectPaywall() {
+  const SELECTORS = [
+    ".paywall", "[class*='paywall']", "[id*='paywall']",
+    ".piano-overlay", ".tp-overlay", ".tpd-overlay",
+    ".subscriber-wall", ".subscription-wall",
+    ".article-locked", ".article--locked",
+    "[data-paywall]", ".premium-wall", ".reg-gate",
+  ];
+  return SELECTORS.some(sel => { try { return !!document.querySelector(sel); } catch { return false; } });
+}
+
 export function init() {
   lastExtraction = safeExtract();
   lastHash = lastExtraction ? hashText(lastExtraction.text) : "";
@@ -26,7 +39,12 @@ export function init() {
   if (lastExtraction?.text.length >= 200) {
     chrome.runtime.sendMessage({
       type: "PREANALYZE",
-      payload: { title: lastExtraction.title, text: lastExtraction.text, url: location.href },
+      payload: {
+        title: lastExtraction.title,
+        text: lastExtraction.text,
+        url: location.href,
+        paywallDetected: detectPaywall(),
+      },
     }).catch(() => {});
   }
 
@@ -97,7 +115,7 @@ function streamAnalyze(payload, panel) {
 }
 
 async function handleToggle() {
-  const panel = mountPanel(streamAnalyze);
+  const panel = mountPanel();
   // Close on click only when showing a result — error state means retry instead.
   if (panel.isOpen() && !panel.isError()) {
     panel.close();
@@ -122,22 +140,43 @@ async function handleToggle() {
     panel.renderError("Couldn't find a readable article on this page.");
     return;
   }
-  try {
-    const res = await streamAnalyze({
-      title: extraction.title,
-      text: extraction.text,
-      url: location.href,
-    }, panel);
-    
-    if (res?.ok) panel.renderResult(res.data, location.href);
-    else panel.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
-  } catch (err) {
-    if (err?.message === "client-timeout") {
-      panel.renderError("All AI providers are busy right now. Wait a moment and try again.");
-    } else {
-      panel.renderError("Couldn't reach the background service. Try reloading the page.");
+
+  const basePayload = {
+    title: extraction.title,
+    text: extraction.text,
+    url: location.href,
+    paywallDetected: detectPaywall(),
+  };
+
+  async function runAnalysis(payload) {
+    try {
+      const res = await streamAnalyze(payload, panel);
+      if (!res?.ok) {
+        panel.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
+        return;
+      }
+      if (res.data.result_type === "incomplete_article") {
+        panel.renderIncomplete(async (pastedText) => {
+          panel.renderLoading("Finding the core claim…");
+          await runAnalysis({ ...basePayload, text: pastedText, isPastedText: true });
+        });
+        return;
+      }
+      const onRetry = async () => {
+        panel.renderLoading("Searching credible evidence…");
+        await runAnalysis({ ...basePayload, bypassNoneCache: true });
+      };
+      panel.renderResult(res.data, location.href, onRetry);
+    } catch (err) {
+      if (err?.message === "client-timeout") {
+        panel.renderError("All AI providers are busy right now. Wait a moment and try again.");
+      } else {
+        panel.renderError("Couldn't reach the background service. Try reloading the page.");
+      }
     }
   }
+
+  await runAnalysis(basePayload);
 }
 
 // --- SPA handling ---------------------------------------------------------

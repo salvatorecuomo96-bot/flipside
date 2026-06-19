@@ -27,7 +27,7 @@ already-approved spec never needs external review. Build, don't loop.
 
 **Always run syntax checks before saying done.** After any JS change:
 ```
-node --check src/background/service-worker.js src/lib/sources.js src/lib/api-client.js src/lib/prompt.js src/content/main.js src/content/ui/panel.js worker/index.js
+node --check src/background/service-worker.js src/lib/sources.js src/lib/api-client.js src/lib/prompt.js src/content/main.js src/content/ui/panel.js worker/index.js src/lib/evidence-id.js src/lib/provenance.js
 ```
 For logic changes also run a quick curl smoke-test against the live worker.
 
@@ -70,8 +70,8 @@ ON CLICK (user opens panel)
   Call 2 — synthesize (evidence passed in prompt)
     → {result_type, headline, summary, core_claims, confidence, used_sources[{id, evidence_quote}]}
   ↓
-  code: provenance gate — drop any used_source whose evidence_quote isn't in its evidence_text
-    fallback: if ALL quotes fail, show cited sources anyway (synthesis still reasoned over real abstracts)
+  code: provenance gate — drop any used_source whose evidence_quote fails checkProvenance()
+    no resurrection fallback: if ALL quotes fail → evidence_too_weak (never shows sourceless results)
   ↓
   badge: green (counter) / blue (context) / clear gray if result is none
   full result cached in analysisCache + urlCache
@@ -100,6 +100,12 @@ COLOR_NEUTRAL   = "#9ca3af"  // gray (pre-click only)
 | `urlCache` | Full synthesis result keyed by URL (for badge restore on navigate) | 30 days |
 | `badgeCache` | Badge state string ("counter"/"context"/"neutral"/"none") keyed by URL | 7 days |
 | `feedbackCache` | Thumbs rating keyed by URL | local only |
+| `noneCache` | Articulated silence keyed by hash(url+text) | 2h (`no_sources_returned`) / 6h (`no_usable_evidence`) / 24h (all others) |
+
+**Retrieval health diagnostics (`src/lib/sources.js`):**
+`fetchSources()` now returns `{ sources, diagnostics }` instead of a plain array.
+`diagnostics = { attempted, succeeded, failed, evidenceAttempted, evidenceFailed }`.
+If `evidenceFailed === evidenceAttempted >= 2` (all evidence-bearing feeds failed) the service worker throws a technical retry error instead of caching a misleading `no_sources_returned` silence.
 
 ## Key files
 
@@ -115,7 +121,11 @@ COLOR_NEUTRAL   = "#9ca3af"  // gray (pre-click only)
 | `src/content/ui/panel.js` | Shadow DOM panel rendering (result, loading stages, further reading) |
 | `src/options/options.html` | Options page — BYOK key entry, preanalyze toggle |
 | `src/options/options.js` | Options page logic — key auto-detection from prefix |
-| `worker/index.js` | Cloudflare Worker — mirrors prompt.js byte-for-byte, KV cache v13 |
+| `src/lib/evidence-id.js` | Stable source identity (URL canonicalization → SHA-256), citation tokens, evidence fingerprint |
+| `src/lib/provenance.js` | Token-span quote matcher used in the provenance gate |
+| `worker/index.js` | Cloudflare Worker — mirrors prompt.js byte-for-byte, KV dual-namespace v14/v15 |
+| `test/provenance.test.mjs` | 7 provenance-matcher unit tests (node --test) |
+| `test/prompt-sync.test.mjs` | Verifies CLASSIFY_PROMPT + SYNTHESIS_PROMPT are verbatim in worker/index.js |
 | `manifest.json` | Version tracking — always bump before CWS upload |
 | `build-zip.ps1` | Builds Chrome + Firefox zips into dist/ |
 
@@ -161,7 +171,7 @@ Invalid key → falls back to free proxy automatically.
 - First deploy on a new machine: `cd worker && npx wrangler login && npx wrangler deploy`
 - Secrets (already set server-side, don't re-add unless rotating):
   `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `SAMBANOVA_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`
-- KV cache version: `v14` — bump `CACHE_KEY_VERSION` in `worker/index.js` whenever a prompt changes
+- KV cache version: `v14` (legacy URL-based) + `v15` (stable content-based) — clients send `citation_schema:"stable-v1"` to use v15. Bump `CACHE_KEY_VERSION_LEGACY` / `CACHE_KEY_VERSION_STABLE` whenever a prompt changes.
 - Provider chain: Groq → Cerebras → SambaNova → Gemini → OpenRouter → Workers AI
 - Worker and `src/lib/prompt.js` must stay in sync — CLASSIFY_PROMPT and SYNTHESIS_PROMPT are mirrored byte-for-byte
 - Privacy policy served at `/privacy` route on the worker — no external hosting needed
@@ -180,7 +190,7 @@ Store listing copy + permission justifications: `store/listing.md` (updated)
 Rule: version must be strictly increasing. Even a rejected upload locks that number.
 Before every CWS upload: bump `manifest.json` version → `./build-zip.ps1` → upload `dist/FlipSide-vX.Y.Z-chrome.zip`.
 
-## What was built in the 2026-06-19 session (pick up from here)
+## What was built in the 2026-06-19 session
 
 **Bugs fixed:**
 - Local classification cache was broken — `getClassification()` read the store but never checked if the key existed, so it always re-classified. Fixed.
@@ -194,10 +204,51 @@ Before every CWS upload: bump `manifest.json` version → `./build-zip.ps1` → 
 - `secondary_topic` in classify — fires evidence feeds for two topic tags in parallel.
 - `rankSources()` — composite scorer replacing flat ordering.
 
-**Next session — Tier 1 improvements (approved, not yet built):**
-1. **Articulate silence** — when result_type is "none", explain *why* using signals already in `cls`: "Straight reporting — no contestable thesis", "Found research but none addresses this claim directly", etc. Mostly a prompt + panel change. High priority, very on-brand.
-2. **Feedback reason chips** — after a 👎, show 4 chips: "Not relevant · Factually wrong · Still one-sided · Sources weak". Extend the `stage=feedback` payload with `reason`.
-3. **Social proof** — surface aggregate helpfulness % (e.g. "84% found this helpful, n=37") from KV vote tallies. Needs a small read endpoint on the worker. Hide below n<10 floor.
+**Articulate silence hardening (built after initial articulate-silence ship):**
+- `fetchSources()` returns `{ sources, diagnostics }` — every feed reports `{ name, evidenceBearing, ok, items, errorType }`.
+- Service worker detects outage (`evidenceFailed === evidenceAttempted >= 2`) → throws technical retry error, never caches.
+- Mixed-firewall collapse (both blocks stripped by source-kind firewall) → `evidence_too_weak` (was silently `no_material_counter`).
+- `noneCache` TTL is now reason-specific via `noneTtl(reason)`: `no_sources_returned` 2h · `no_usable_evidence` 6h · all others 24h. TTL stored per entry.
+- `opinion_no_evidence_basis` panel copy updated to neutral wording (avoids implying opinion articles can't make empirical claims).
+
+## What was built in the 2026-06-20 session (pick up from here)
+
+**Stable source identity + evidence fingerprinting (`src/lib/evidence-id.js`):**
+- `canonicalizeUrl()` — strips tracking params, sorts remaining, normalises path.
+- `sourceIdentity()` — derives stable key from URL patterns: DOI, arXiv, OpenAlex, NCT, NBER, FedReg, CourtListener, Wikipedia, then canonical URL.
+- `stableSourceKey()` — `"src_" + SHA-256(identity)`.
+- `generateCitationToken()` — 10–12 Base32 chars, collision-checked within prompt.
+- `buildEvidenceFingerprint()` — SHA-256 of sorted per-source `stableKey|kind|year|sha256(evidence)` entries.
+
+**Strict provenance gate (`src/lib/provenance.js`):**
+- `checkProvenance(quote, evidenceText)` — token-span matcher, NFKC+quote+dash normalisation, ellipsis split (≤40 token gap), minimum thresholds (≥8 tokens, ≥5 distinct, ≥4 meaningful, ≥35 chars).
+- Replaces the old `quoteAppears()` substring check.
+- Resurrection fallback REMOVED — if all cited quotes fail, result is `evidence_too_weak` (not a sourceless display).
+- 7 unit tests: `test/provenance.test.mjs`.
+
+**Extraction completeness check (C2.5):**
+- Pre-classification check in service-worker.js: word count + PAYWALL_RE → `incomplete_article`.
+- Separate `extractionCache` keyed by `hash(url+text)`, 2h TTL, never shares space with `noneCache`.
+- Panel renders "article appears incomplete" message + "✎ Paste article text" button (paste flow inlined, not a footer feature).
+- `bypassNoneCache` payload flag: transient silences (`no_sources_returned`, `no_usable_evidence`) show a **Try Again** button in the panel.
+
+**Worker dual-namespace KV cache (C4):**
+- v14 (legacy, URL-keyed) kept for old clients.
+- v15 (stable, content-keyed) for clients sending `citation_schema:"stable-v1"`.
+- Classify cache key (v15): `djb2(title[:500] + text[:9000])` via `buildStableCacheKey`.
+- Synthesis cache key (v15): `djb2(text[:6000] + coreClaim + claimType + articleType + evidenceFingerprint + YYYY-MM-DD)`.
+- `bypassCache` flag: skip KV read (still write on success — for regenerating stale entries).
+- KV writes now use `ctx.waitUntil()` — fire-and-forget without this was silently dropping writes.
+- Classify results now cached (previously only synthesis was cached, causing repeated classify calls).
+
+**Prompt-sync test (`test/prompt-sync.test.mjs`):**
+- Extracts CLASSIFY_PROMPT and SYNTHESIS_PROMPT verbatim from `src/lib/prompt.js`.
+- Asserts both appear byte-for-byte in `worker/index.js`.
+- Runs via `node --test test/prompt-sync.test.mjs`.
+
+**Pending Tier 1 improvements:**
+1. **Feedback reason chips** — after a 👎, show 4 chips: "Not relevant · Factually wrong · Still one-sided · Sources weak". Extend the `stage=feedback` payload with `reason`.
+2. **Social proof** — surface aggregate helpfulness % (e.g. "84% found this helpful, n=37") from KV vote tallies. Needs a small read endpoint on the worker. Hide below n<10 floor.
 
 ## Build
 

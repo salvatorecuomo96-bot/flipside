@@ -147,7 +147,7 @@ If no credible result, choose the SINGLE most accurate reason code:
 export function buildSynthMessages({ article, articleType, coreClaim, claimType, evidence }) {
   const evidenceBlock = evidence.length
     ? evidence.map(e => [
-        `[${e.id}] (${e.kind}${e.citationCount != null ? `, ${e.citationCount} citations` : ""}${e.year ? `, ${e.year}` : ""}) ${e.title}`,
+        `[${e.citationToken ?? e.id}] (${e.kind}${e.year ? `, ${e.year}` : ""}) ${e.title}`,
         ...(e.age_tag ? [e.age_tag] : []),
         `evidence_text: ${e.evidence_text}`,
       ].join("\n")).join("\n\n")
