@@ -129,7 +129,7 @@ async function handleToggle() {
       url: location.href,
     }, panel);
     
-    if (res?.ok) panel.renderResult(res.data);
+    if (res?.ok) panel.renderResult(res.data, location.href);
     else panel.renderError(res?.error ?? "Something went wrong.", res?.retryAfter ?? 0, res?.daily === true);
   } catch (err) {
     if (err?.message === "client-timeout") {

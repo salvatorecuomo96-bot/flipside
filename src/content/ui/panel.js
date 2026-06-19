@@ -104,10 +104,11 @@ export function mountPanel(onAnalyze) {
         }, 1000);
       }
     },
-    renderResult(data) {
+    renderResult(data, url) {
       inErrorState = false;
       clearCountdown();
       body.innerHTML = renderResultHtml(data);
+      wireFeedback(shadow, url || "");
     },
     renderPasteMode() {
       inErrorState = false;
@@ -153,6 +154,8 @@ export function mountPanel(onAnalyze) {
 function renderResultHtml(data) {
   const type = data?.result_type;
 
+  if (type === "mixed") return renderMixedHtml(data);
+
   // NONE — confident silence. No links, no hedging.
   if (type !== "counter_perspective" && type !== "additional_context") {
     return `
@@ -166,58 +169,86 @@ function renderResultHtml(data) {
   const label = isCounter ? "Counter-perspective" : "Additional context";
   const labelClass = isCounter ? "ec-label-counter" : "ec-label-context";
 
-  const claims = Array.isArray(data?.core_claims) ? data.core_claims : [];
-  const claimsHtml = claims.length
+  return `
+    ${renderClaims(data.core_claims)}
+    <section class="ec-section">
+      <p class="ec-label ${labelClass}">${label} ${confChip(data.confidence)}</p>
+      ${data.headline ? `<p class="ec-headline">${escapeHtml(data.headline)}</p>` : ""}
+      ${data.summary ? `<p class="ec-perspective">${escapeHtml(data.summary)}</p>` : ""}
+      ${renderSourcesBlock(data.sources)}
+      ${renderFurther(data.furtherReading)}
+    </section>
+    ${renderFeedbackHtml()}`;
+}
+
+// MIXED — two stacked blocks: empirical counter (academic) + moral context
+// (reference). Claims once on top, further-reading once at the bottom.
+function renderMixedHtml(data) {
+  const emp = data.empirical_counter || {};
+  const ctx = data.additional_context || {};
+  const empHtml = emp.summary
     ? `<section class="ec-section">
-         <p class="ec-label">Core claims</p>
-         <ul class="ec-claims">${claims.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>
+         <p class="ec-label ec-label-counter">Empirical counter-evidence ${confChip(emp.confidence)}</p>
+         <p class="ec-perspective">${escapeHtml(emp.summary)}</p>
+         ${renderSourcesBlock(emp.sources)}
        </section>`
     : "";
-
-  const headlineHtml = data.headline
-    ? `<p class="ec-headline">${escapeHtml(data.headline)}</p>` : "";
-  const summaryHtml = data.summary
-    ? `<p class="ec-perspective">${escapeHtml(data.summary)}</p>` : "";
-
-  const conf = typeof data.confidence === "number" ? data.confidence : null;
-  const confHtml = conf != null ? `<span class="ec-conf">${confidenceLabel(conf)}</span>` : "";
-
-  const sources = Array.isArray(data.sources) ? data.sources : [];
-  const sourcesHtml = sources.length
-    ? `<div class="ec-sources">
-         <p class="ec-label">Sources <span class="ec-src-count">${sources.length}</span></p>
-         <ul class="ec-sources-list open">
-           ${sources.map((s) => `<li>${renderSource(s)}</li>`).join("")}
-         </ul>
-       </div>`
+  const ctxHtml = ctx.summary
+    ? `<section class="ec-section">
+         <p class="ec-label ec-label-context">Additional context</p>
+         <p class="ec-perspective">${escapeHtml(ctx.summary)}</p>
+         ${renderSourcesBlock(ctx.sources)}
+       </section>`
     : "";
-
-  const further = Array.isArray(data.furtherReading) ? data.furtherReading : [];
-  const furtherHtml = further.length
-    ? `<div class="ec-sources">
-         <button class="ec-sources-toggle" aria-expanded="false" onclick="
-           var btn=this, list=this.nextElementSibling;
-           var open=btn.getAttribute('aria-expanded')==='true';
-           btn.setAttribute('aria-expanded', open ? 'false' : 'true');
-           list.classList.toggle('open', !open);
-         ">
-           <i class="ec-toggle-arrow">▶</i> Further reading
-         </button>
-         <ul class="ec-sources-list">
-           ${further.map((s) => `<li>${renderSource(s)}</li>`).join("")}
-         </ul>
-       </div>`
-    : "";
-
   return `
-    ${claimsHtml}
-    <section class="ec-section">
-      <p class="ec-label ${labelClass}">${label} ${confHtml}</p>
-      ${headlineHtml}
-      ${summaryHtml}
-      ${sourcesHtml}
-      ${furtherHtml}
-    </section>`;
+    ${renderClaims(data.core_claims)}
+    ${data.headline ? `<p class="ec-headline">${escapeHtml(data.headline)}</p>` : ""}
+    ${empHtml}
+    ${ctxHtml}
+    <section class="ec-section">${renderFurther(data.furtherReading)}</section>
+    ${renderFeedbackHtml()}`;
+}
+
+function renderClaims(coreClaims) {
+  const claims = Array.isArray(coreClaims) ? coreClaims : [];
+  if (!claims.length) return "";
+  return `<section class="ec-section">
+       <p class="ec-label">Core claims</p>
+       <ul class="ec-claims">${claims.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>
+     </section>`;
+}
+
+function confChip(confidence) {
+  return typeof confidence === "number" ? `<span class="ec-conf">${confidenceLabel(confidence)}</span>` : "";
+}
+
+function renderSourcesBlock(sources) {
+  const srcs = Array.isArray(sources) ? sources : [];
+  if (!srcs.length) return "";
+  return `<div class="ec-sources">
+       <p class="ec-label">Sources <span class="ec-src-count">${srcs.length}</span></p>
+       <ul class="ec-sources-list open">
+         ${srcs.map((s) => `<li>${renderSource(s)}</li>`).join("")}
+       </ul>
+     </div>`;
+}
+
+function renderFurther(further) {
+  const arr = Array.isArray(further) ? further : [];
+  if (!arr.length) return "";
+  return `<div class="ec-sources">
+       <button class="ec-sources-toggle" aria-expanded="false" onclick="
+         var btn=this, list=this.nextElementSibling;
+         var open=btn.getAttribute('aria-expanded')==='true';
+         btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+         list.classList.toggle('open', !open);
+       ">
+         <i class="ec-toggle-arrow">▶</i> Further reading
+       </button>
+       <ul class="ec-sources-list">
+         ${arr.map((s) => `<li>${renderSource(s)}</li>`).join("")}
+       </ul>
+     </div>`;
 }
 
 function confidenceLabel(c) {
@@ -282,6 +313,35 @@ function linkifySource(str) {
   const query = encodeURIComponent(trimmed);
   const href = `https://duckduckgo.com/?q=${query}`;
   return `<a class="ec-src-search" href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+}
+
+function wireFeedback(shadow, url) {
+  const upBtn = shadow.querySelector(".ec-feedback-up");
+  const downBtn = shadow.querySelector(".ec-feedback-down");
+  if (!upBtn || !downBtn || !url) return;
+  chrome.runtime.sendMessage({ type: "GET_FEEDBACK", url }, (resp) => {
+    const rating = resp?.rating ?? null;
+    if (rating === "up") upBtn.classList.add("ec-fb-selected");
+    if (rating === "down") downBtn.classList.add("ec-fb-selected");
+  });
+  upBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "up" });
+    upBtn.classList.add("ec-fb-selected");
+    downBtn.classList.remove("ec-fb-selected");
+  });
+  downBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down" });
+    downBtn.classList.add("ec-fb-selected");
+    upBtn.classList.remove("ec-fb-selected");
+  });
+}
+
+function renderFeedbackHtml() {
+  return `<div class="ec-feedback">
+    <span class="ec-feedback-label">Helpful?</span>
+    <button class="ec-feedback-up" title="Yes">👍</button>
+    <button class="ec-feedback-down" title="No">👎</button>
+  </div>`;
 }
 
 function escapeHtml(str) {
@@ -636,6 +696,33 @@ const TEMPLATE = `
       font-variant-numeric: tabular-nums;
       color: var(--ec-accent);
     }
+
+    /* ── Feedback ── */
+    .ec-feedback {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--ec-border);
+    }
+    .ec-feedback-label {
+      font-size: 11px;
+      color: var(--ec-muted);
+      flex: 1;
+    }
+    .ec-feedback-up, .ec-feedback-down {
+      all: unset;
+      cursor: pointer;
+      font-size: 15px;
+      padding: 3px 7px;
+      border-radius: 6px;
+      line-height: 1;
+      opacity: 0.4;
+      transition: opacity 0.12s, background 0.12s;
+    }
+    .ec-feedback-up:hover, .ec-feedback-down:hover { opacity: 1; background: var(--ec-tint); }
+    .ec-feedback-up.ec-fb-selected, .ec-feedback-down.ec-fb-selected { opacity: 1; background: var(--ec-tint); }
 
     /* ── Footer ── */
     .ec-footer {

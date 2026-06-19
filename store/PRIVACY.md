@@ -55,4 +55,4 @@ If this policy changes, the updated version will be posted at this URL with a ne
 
 ## Contact
 
-Questions about privacy: **salvatore.cuomo96@gmail.com**
+Questions about privacy: **flipsideextension@gmail.com**

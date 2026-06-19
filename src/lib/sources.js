@@ -18,7 +18,7 @@ const MAILTO = "flipside-extension@proton.me";
 const MIN_EVIDENCE_CHARS = 80; // shorter than this isn't real evidence
 
 const CAP = {
-  openAlex: 4, news: 3, gdelt: 2, wikipedia: 1,
+  openAlex: 4, news: 3, gdelt: 2, wikipedia: 3,
   europePMC: 3, arxiv: 2, courtListener: 2, fedRegister: 2,
   clinicalTrials: 3, worldBank: 4, epaRegs: 2, nber: 3,
 };
@@ -27,12 +27,12 @@ const CAP = {
  * @param {string} query      keywords from the model's research_query
  * @param {string} topic      topic tag (health|science|law|finance|government|...)
  * @param {string} articleUrl URL of the article (to filter self-links)
+ * @param {string} secondaryTopic optional second topic for cross-domain claims
  * @returns {Promise<Source[]>}  each: {id,title,url,publisher,kind,evidence_text,citationCount,year,usable}
  */
-export async function fetchSources(query, topic = "", articleUrl = "") {
+export async function fetchSources(query, topic = "", articleUrl = "", secondaryTopic = "") {
   const q = (query || "").trim();
   if (!q) return [];
-  const t = (topic || "").toLowerCase();
   const articleDomain = extractDomain(articleUrl);
 
   const jobs = [
@@ -41,22 +41,10 @@ export async function fetchSources(query, topic = "", articleUrl = "") {
     cap(fetchGdelt(q),       CAP.gdelt),
     cap(fetchWikipedia(q),   CAP.wikipedia),
   ];
-  if (["health", "medicine", "science"].includes(t)) {
-    jobs.push(cap(fetchEuropePMC(q),      CAP.europePMC));
-    jobs.push(cap(fetchClinicalTrials(q), CAP.clinicalTrials));
-  }
-  if (["science", "physics", "technology"].includes(t))   jobs.push(cap(fetchArxiv(q), CAP.arxiv));
-  if (["law", "legal", "court"].includes(t))              jobs.push(cap(fetchCourtListener(q), CAP.courtListener));
-  if (["government", "policy"].includes(t))               jobs.push(cap(fetchFederalRegister(q), CAP.fedRegister));
-  if (["finance", "economics"].includes(t)) {
-    jobs.push(cap(fetchWorldBank(q), CAP.worldBank));
-    jobs.push(cap(fetchNBER(q),      CAP.nber));
-  }
-  if (["environment"].includes(t)) {
-    jobs.push(cap(fetchWorldBank(q),       CAP.worldBank));
-    jobs.push(cap(fetchEPARegulations(q),  CAP.epaRegs));
-    jobs.push(cap(fetchFederalRegister(q), CAP.fedRegister));
-  }
+  // Fire each topic's specialist feeds. A feed shared by both topics runs once.
+  const fired = new Set();
+  addTopicJobs(jobs, q, topic, fired, "primary");
+  addTopicJobs(jobs, q, secondaryTopic, fired, "secondary");
 
   const pools = await Promise.all(jobs);
 
@@ -86,6 +74,8 @@ export async function fetchSources(query, topic = "", articleUrl = "") {
       evidence_text: evidence,
       citationCount: s.citationCount ?? null,
       year: s.year ?? null,
+      origin: s.origin || "primary",
+      ...ageTag(s.year ?? null),
       usable: evidence.length >= MIN_EVIDENCE_CHARS,
     });
     if (out.length >= 16) break;
@@ -93,9 +83,200 @@ export async function fetchSources(query, topic = "", articleUrl = "") {
   return out;
 }
 
-async function cap(promise, n) {
-  try { const r = await promise; return Array.isArray(r) ? r.slice(0, n) : []; }
+// ─── Global Relevance Ranker ──────────────────────────────────────────────────
+// Scores all usable candidates from all fired feeds against the classifier's
+// research_query and returns the top `limit` sources, with hard-age sources
+// guaranteed at the physical bottom regardless of score (double-layer defence).
+//
+// Components (all 0..1 so weights are interpretable):
+//   W_COV  — query-term coverage (unique terms present ÷ unique terms in query)
+//   W_TF   — TF saturation (BM25-style k1 without IDF, which is noisy at n≤16)
+//   W_TTL  — title coverage bonus (query term in title > body)
+//   W_KIND — source-kind authority prior
+//   W_CITE — log-scaled citation count
+//   P_SOFT/P_HARD — age penalties for soft/hard age tiers
+const W_COV  = 0.45, W_TF = 0.15, W_TTL = 0.20, W_KIND = 0.10, W_CITE = 0.10;
+const P_SOFT = 0.10, P_HARD = 0.30;
+const P_OFFDOMAIN = 0.6; // normative claims: empirical research (academic/preprint) is wrong-domain,
+                         // penalised below coverage's max so reference (Wikipedia) wins. (Notch 1)
+const P_GEO = 2.0;       // geo-mismatch: exceeds max possible positive score (~1.0) so any foreign-
+                         // specific source loses to any topically-relevant source. Soft (not a hard
+                         // exclude) so if ALL sources mismatch, the least-bad still surfaces.
+const K1 = 1.2;          // TF saturation constant
+const MAX_CITES = 1000;  // citation count cap before log-scaling
+
+// Lowercase alias → ISO-3166 code. Multi-word and demonym forms included.
+// Deliberately OMITS ambiguous English words (Georgia/Turkey/Chad/Jordan) to avoid
+// false positives — under-detecting rare countries beats penalising US articles that
+// mention the state of Georgia. Classifier is instructed to emit full country names.
+const GEO_ALIASES = {
+  "united states":"US","u.s.a.":"US","usa":"US","america":"US","american":"US","americans":"US",
+  "united kingdom":"GB","britain":"GB","british":"GB","england":"GB","scotland":"GB","wales":"GB",
+  "australia":"AU","australian":"AU","australians":"AU",
+  "canada":"CA","canadian":"CA","canadians":"CA",
+  "new zealand":"NZ","zimbabwe":"ZW","zimbabwean":"ZW","zambia":"ZM","zambian":"ZM",
+  "south africa":"ZA","south african":"ZA","nigeria":"NG","nigerian":"NG",
+  "kenya":"KE","kenyan":"KE","ghana":"GH","ghanaian":"GH",
+  "uganda":"UG","ugandan":"UG","ethiopia":"ET","ethiopian":"ET","tanzania":"TZ","tanzanian":"TZ",
+  "egypt":"EG","egyptian":"EG","morocco":"MA","moroccan":"MA",
+  "india":"IN","indian":"IN","pakistan":"PK","pakistani":"PK",
+  "bangladesh":"BD","bangladeshi":"BD","sri lanka":"LK","nepal":"NP","nepali":"NP",
+  "china":"CN","chinese":"CN","japan":"JP","japanese":"JP",
+  "south korea":"KR","north korea":"KP","korea":"KR","korean":"KR",
+  "indonesia":"ID","indonesian":"ID","philippines":"PH","filipino":"PH","filipina":"PH",
+  "vietnam":"VN","vietnamese":"VN","thailand":"TH","thai":"TH","malaysia":"MY","malaysian":"MY",
+  "germany":"DE","german":"DE","france":"FR","french":"FR","italy":"IT","italian":"IT",
+  "spain":"ES","spanish":"ES","portugal":"PT","portuguese":"PT",
+  "netherlands":"NL","dutch":"NL","belgium":"BE","belgian":"BE",
+  "sweden":"SE","swedish":"SE","norway":"NO","norwegian":"NO",
+  "denmark":"DK","danish":"DK","finland":"FI","finnish":"FI",
+  "poland":"PL","polish":"PL","ukraine":"UA","ukrainian":"UA",
+  "russia":"RU","russian":"RU","brazil":"BR","brazilian":"BR",
+  "argentina":"AR","argentinian":"AR","chile":"CL","chilean":"CL",
+  "colombia":"CO","colombian":"CO","mexico":"MX","mexican":"MX",
+  "venezuela":"VE","venezuelan":"VE","peru":"PE","peruvian":"PE",
+  "israel":"IL","israeli":"IL","iran":"IR","iranian":"IR",
+  "saudi arabia":"SA","saudi":"SA","iraq":"IQ","iraqi":"IQ",
+  "afghanistan":"AF","afghan":"AF","syria":"SY","syrian":"SY",
+};
+
+// Returns Set of ISO codes mentioned in text. Padding with spaces gives word-
+// boundary matching for both single- and multi-word aliases without a full tokeniser.
+function detectGeos(text) {
+  const t = " " + String(text || "").toLowerCase().normalize("NFKD")
+    .replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ") + " ";
+  const found = new Set();
+  for (const alias in GEO_ALIASES) if (t.includes(" " + alias + " ")) found.add(GEO_ALIASES[alias]);
+  return found;
+}
+
+function geoPenalty(source, requiredCodes) {
+  if (!requiredCodes.size) return 0;                               // claim is geo-agnostic
+  const mentioned = detectGeos((source.title || "") + " " + (source.evidence_text || ""));
+  if (!mentioned.size) return 0;                                   // source names no country — keep (theoretical)
+  for (const c of mentioned) if (requiredCodes.has(c)) return 0;  // names a required country — relevant
+  return P_GEO;                                                    // names ONLY foreign countries — sink it
+}
+
+const KIND_PRIOR = { academic: 1.0, government: 0.85, legal: 0.85, preprint: 0.6, reference: 0.4, news: 0.2 };
+
+const STOPWORDS = new Set(["a","an","the","and","or","of","to","in","for","on","is","with",
+  "at","by","from","as","it","its","are","was","be","has","that","this","which","not","but"]);
+
+function tokenize(str) {
+  return [...(str || "").toLowerCase().normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .matchAll(/[\p{L}\p{N}]+/gu)]
+    .map(m => m[0])
+    .filter(t => t.length > 1 && !STOPWORDS.has(t));
+}
+
+function termFreqs(tokens) {
+  const tf = new Map();
+  for (const t of tokens) tf.set(t, (tf.get(t) || 0) + 1);
+  return tf;
+}
+
+function coverage(querySet, docSet) {
+  if (!querySet.size) return 0;
+  let hits = 0;
+  for (const t of querySet) if (docSet.has(t)) hits++;
+  return hits / querySet.size;
+}
+
+function tfSaturated(querySet, docFreqs) {
+  if (!querySet.size) return 0;
+  let sum = 0;
+  for (const t of querySet) { const f = docFreqs.get(t) || 0; sum += f / (f + K1); }
+  return sum / querySet.size;
+}
+
+export function rankSources(sources, query, limit = 6, claimType = "empirical", requiredGeography = []) {
+  const qSet = new Set(tokenize(query));
+  const normative = claimType === "normative";
+  const requiredCodes = new Set();
+  for (const g of (requiredGeography || [])) {
+    const code = GEO_ALIASES[String(g).toLowerCase().trim()];
+    if (code) requiredCodes.add(code);
+  }
+
+  const scored = sources.map(s => {
+    const bodyToks = tokenize(s.evidence_text);
+    const titleToks = tokenize(s.title);
+    const bodyFreqs = termFreqs(bodyToks);
+    const bodySet   = new Set(bodyToks);
+    const titleSet  = new Set(titleToks);
+
+    const cov  = coverage(qSet, bodySet);
+    const tf   = tfSaturated(qSet, bodyFreqs);
+    const ttl  = coverage(qSet, titleSet);
+    const kind = KIND_PRIOR[s.kind] ?? 0.3;
+    const cite = s.citationCount
+      ? Math.log1p(Math.min(s.citationCount, MAX_CITES)) / Math.log1p(MAX_CITES)
+      : 0;
+    const age  = s.age_tier === "hard" ? P_HARD : s.age_tier === "soft" ? P_SOFT : 0;
+    const off  = (normative && (s.kind === "academic" || s.kind === "preprint")) ? P_OFFDOMAIN : 0;
+    const geo  = geoPenalty(s, requiredCodes);
+
+    return { ...s, _score: W_COV*cov + W_TF*tf + W_TTL*ttl + W_KIND*kind + W_CITE*cite - age - off - geo };
+  });
+
+  // Stable tiebreak: citation count then recency for equal scores.
+  scored.sort((a, b) =>
+    b._score - a._score ||
+    (b.citationCount || 0) - (a.citationCount || 0) ||
+    (b.year || 0) - (a.year || 0)
+  );
+
+  const selected = scored.slice(0, limit);
+
+  // Penalty governs selection; partition guarantees physical ordering.
+  // Hard-age sources sink to the bottom even if score was high enough to be selected.
+  return [
+    ...selected.filter(s => s.age_tier !== "hard"),
+    ...selected.filter(s => s.age_tier === "hard"),
+  ];
+}
+
+// Push the specialist feeds for one topic, skipping any feed already queued by an
+// earlier topic (so primary+secondary overlap doesn't double-fetch).
+function addTopicJobs(jobs, q, topic, fired, origin = "primary") {
+  const t = (topic || "").toLowerCase();
+  if (!t) return;
+  const add = (key, makeJob, n) => { if (fired.has(key)) return; fired.add(key); jobs.push(cap(makeJob(), n, origin)); };
+  if (["health", "medicine", "science"].includes(t)) {
+    add("europePMC",      () => fetchEuropePMC(q),      CAP.europePMC);
+    add("clinicalTrials", () => fetchClinicalTrials(q), CAP.clinicalTrials);
+  }
+  if (["science", "physics", "technology"].includes(t)) add("arxiv",         () => fetchArxiv(q),           CAP.arxiv);
+  if (["law", "legal", "court"].includes(t))            add("courtListener", () => fetchCourtListener(q),   CAP.courtListener);
+  if (["government", "policy"].includes(t))             add("fedRegister",   () => fetchFederalRegister(q), CAP.fedRegister);
+  if (["finance", "economics"].includes(t)) {
+    add("worldBank", () => fetchWorldBank(q), CAP.worldBank);
+    add("nber",      () => fetchNBER(q),      CAP.nber);
+  }
+  if (["environment"].includes(t)) {
+    add("worldBank",   () => fetchWorldBank(q),       CAP.worldBank);
+    add("epaRegs",     () => fetchEPARegulations(q),  CAP.epaRegs);
+    add("fedRegister", () => fetchFederalRegister(q), CAP.fedRegister);
+  }
+}
+
+async function cap(promise, n, origin = "primary") {
+  try { const r = await promise; return Array.isArray(r) ? r.slice(0, n).map(s => ({ ...s, origin })) : []; }
   catch { return []; }
+}
+
+// Code-level temporal label, precomputed once here (client side) so the client
+// and worker prompt builders render the SAME string — no duplicated date math,
+// no drift. Returned as its own field and rendered on its own line; it is NEVER
+// folded into evidence_text, so the provenance gate (quoteAppears) is unaffected.
+function ageTag(year) {
+  if (!year || typeof year !== "number") return { age_tag: "", age_tier: "recent" };
+  const age = new Date().getFullYear() - year;
+  if (age <= 5)  return { age_tag: "", age_tier: "recent" };
+  if (age <= 15) return { age_tag: `[Published ${age} years ago — verify it reflects current policy status]`, age_tier: "soft" };
+  return { age_tag: `[Published ${age} years ago — use ONLY for foundational theory/mechanisms, NOT for current event status]`, age_tier: "hard" };
 }
 
 // --- OpenAlex: academic papers WITH abstracts -------------------------------
@@ -248,23 +429,27 @@ async function fetchGdelt(q) {
 }
 
 // --- Wikipedia: reference WITH summary extract (reliable context fallback) ---
+// Top-3 pages: for normative/theological claims the encyclopedic concept entry IS
+// the right evidence, so we pull a few candidates and let the ranker pick. (Notch 1)
 async function fetchWikipedia(q) {
-  const url = "https://en.wikipedia.org/w/rest.php/v1/search/page?q=" + encodeURIComponent(q) + "&limit=1";
+  const url = "https://en.wikipedia.org/w/rest.php/v1/search/page?q=" + encodeURIComponent(q) + "&limit=3";
   const data = await getJson(url);
-  const p = (data?.pages || []).find(x => x?.key && x?.title);
-  if (!p) return [];
-  // Pull the real summary paragraph so Wikipedia is usable evidence, not just a link.
-  let extract = (p.description || "").trim();
-  try {
-    const sum = await getJson("https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(p.key));
-    if (sum?.extract) extract = sum.extract.trim();
-  } catch {}
-  return [{
-    title: p.title,
-    url: "https://en.wikipedia.org/wiki/" + encodeURIComponent(p.key),
-    publisher: "Wikipedia", kind: "reference",
-    evidence_text: extract,
-  }];
+  const pages = (data?.pages || []).filter(x => x?.key && x?.title).slice(0, 3);
+  if (!pages.length) return [];
+  return Promise.all(pages.map(async p => {
+    // Pull the real summary paragraph so Wikipedia is usable evidence, not just a link.
+    let extract = (p.description || "").trim();
+    try {
+      const sum = await getJson("https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(p.key));
+      if (sum?.extract) extract = sum.extract.trim();
+    } catch {}
+    return {
+      title: p.title,
+      url: "https://en.wikipedia.org/wiki/" + encodeURIComponent(p.key),
+      publisher: "Wikipedia", kind: "reference",
+      evidence_text: extract,
+    };
+  }));
 }
 
 // --- ClinicalTrials.gov: registered studies WITH summaries ------------------

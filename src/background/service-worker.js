@@ -10,10 +10,13 @@
 // confidence ≥ THRESHOLD). No dot for "none" — silence is the honest default.
 
 import { classify, synthesize } from "../lib/api-client.js";
-import { fetchSources } from "../lib/sources.js";
+import { fetchSources, rankSources } from "../lib/sources.js";
 
+const PROXY_URL = "https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev";
 const CONF_THRESHOLD = 0.7;
 const CLAIM_THRESHOLD = 0.4; // min claim_strength to show the neutral "claim here" dot
+const MAX_TOTAL_USABLE = 6;  // hard ceiling on abstracts sent to synthesis (dilution guard)
+const EMPIRICAL_KINDS = new Set(["academic", "preprint", "government", "legal"]); // allowed in a mixed empirical_counter block
 const COLOR_COUNTER = "#22c55e"; // green  — counter-perspective found
 const COLOR_CONTEXT = "#3b82f6"; // blue   — additional context found
 const COLOR_NEUTRAL = "#9ca3af"; // gray   — analyzable claim detected (pre-click)
@@ -46,6 +49,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 // --- Badge ----------
 function badgeState(data) {
   if (!data || data.result_type === "none") return "none";
+  // Mixed always has a moral-context half worth surfacing; green if its empirical
+  // counter is confident enough, otherwise blue (context).
+  if (data.result_type === "mixed") {
+    return (data.empirical_counter?.confidence ?? 0) >= CONF_THRESHOLD ? "counter" : "context";
+  }
   if ((data.confidence ?? 0) < CONF_THRESHOLD) return "none";
   return data.result_type === "counter_perspective" ? "counter" : "context";
 }
@@ -130,6 +138,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return false;
   }
+  if (msg?.type === "FEEDBACK") {
+    const { url, rating } = msg;
+    if (!url || (rating !== "up" && rating !== "down")) return false;
+    chrome.storage.local.get("feedbackCache").then(({ feedbackCache = {} }) => {
+      feedbackCache[url] = rating;
+      chrome.storage.local.set({ feedbackCache });
+    });
+    fetch(PROXY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Origin": `chrome-extension://${chrome.runtime.id}` },
+      body: JSON.stringify({ stage: "feedback", url, rating }),
+    }).catch(() => {});
+    return false;
+  }
+  if (msg?.type === "GET_FEEDBACK") {
+    chrome.storage.local.get("feedbackCache").then(({ feedbackCache = {} }) => {
+      sendResponse({ rating: feedbackCache[msg.url] ?? null });
+    });
+    return true;
+  }
   return false;
 });
 
@@ -137,8 +165,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function handleAnalyze(payload, onStage = null) {
   const cacheKey = hashStr((payload.url || "") + "\n" + (payload.text || ""));
 
-  const cached = (await cacheGet(cacheKey)) || (await urlCacheGet(payload.url));
-  if (cached) return { ok: true, data: cached, cached: true };
+  if (payload.url) {
+    const urlCached = await urlCacheGet(payload.url);
+    if (urlCached) return { ok: true, data: urlCached };
+  }
+  const hashCached = await cacheGet(cacheKey);
+  if (hashCached) return { ok: true, data: hashCached };
 
   const { apiKey, byokProvider } = await chrome.storage.local.get(["apiKey", "byokProvider"]);
   const provider = byokProvider ?? "groq";
@@ -147,14 +179,15 @@ async function handleAnalyze(payload, onStage = null) {
     // CALL 1 — classify (reuses the result cached by background preanalyze)
     onStage?.("Finding the core claim…");
     const cls = await getClassification(payload);
-    if (!cls.analyzable) return saveAndReturn(cacheKey, payload.url, { result_type: "none", reason: "not_analyzable" });
+    if (!cls.analyzable) return await saveAndReturn(cacheKey, payload.url, { result_type: "none", reason: "not_analyzable" });
 
     // RETRIEVAL — real evidence
     onStage?.("Searching credible evidence…");
-    const all = await fetchSources(cls.research_query || payload.title, cls.topic, payload.url || "");
-    const usable = all.filter((s) => s.usable);
+    const all = await fetchSources(cls.research_query || payload.title, cls.topic, payload.url || "", cls.secondary_topic || "");
+
+    const usable = rankSources(all.filter(s => s.usable), cls.research_query || payload.title, MAX_TOTAL_USABLE, cls.claim_type, cls.required_geography);
     if (usable.length === 0) {
-      return saveAndReturn(cacheKey, payload.url, {
+      return await saveAndReturn(cacheKey, payload.url, {
         result_type: "none", reason: "insufficient_evidence",
         furtherReading: trimSources(all, 5),
       });
@@ -164,10 +197,10 @@ async function handleAnalyze(payload, onStage = null) {
     onStage?.("Weighing the evidence…");
     const synth = await synthesize({
       apiKey, provider, article: payload,
-      articleType: cls.article_type, coreClaim: cls.core_claim, evidence: usable,
+      articleType: cls.article_type, coreClaim: cls.core_claim, claimType: cls.claim_type, evidence: usable,
     });
     if (synth.result_type === "none") {
-      return saveAndReturn(cacheKey, payload.url, {
+      return await saveAndReturn(cacheKey, payload.url, {
         result_type: "none", reason: synth.reason || "no_material_finding",
         furtherReading: trimSources(all, 5),
       });
@@ -175,18 +208,36 @@ async function handleAnalyze(payload, onStage = null) {
 
     // VALIDATE provenance — keep only cited sources whose quote is really present
     const byId = new Map(usable.map((s) => [s.id, s]));
-    const validated = [];
-    for (const u of synth.used_sources) {
-      const src = byId.get(u.id);
-      if (!src) continue;
-      if (quoteAppears(u.evidence_quote, src.evidence_text)) validated.push(src);
-    }
-    // If the model cited sources but none passed the quote check, fall back to the
-    // cited sources (the synthesis still reasoned over real abstracts) rather than
-    // showing a perspective with zero sources.
-    let shown = dedupByUrl(validated);
-    if (shown.length === 0) shown = dedupByUrl(synth.used_sources.map((u) => byId.get(u.id)).filter(Boolean));
 
+    // MIXED — two provenance-checked blocks (empirical counter + moral context).
+    // Code-level source-kind firewall: the empirical block may only show evidence-
+    // bearing kinds, the context block only reference. The model cannot bleed an
+    // academic paper into the moral debate no matter what it emits. A block whose
+    // sources are all filtered out loses its summary (no unsourced claims).
+    if (synth.result_type === "mixed") {
+      const empShown = validateShown(synth.empirical_counter.used_sources, byId)
+        .filter((s) => EMPIRICAL_KINDS.has(s.kind));
+      const ctxShown = validateShown(synth.additional_context.used_sources, byId)
+        .filter((s) => s.kind === "reference");
+      const empSummary = empShown.length ? synth.empirical_counter.summary : "";
+      const ctxSummary = ctxShown.length ? synth.additional_context.summary : "";
+      if (!empSummary && !ctxSummary) {
+        return await saveAndReturn(cacheKey, payload.url, {
+          result_type: "none", reason: "no_material_finding", furtherReading: trimSources(all, 5),
+        });
+      }
+      const usedUrls = new Set([...empShown, ...ctxShown].map((s) => s.url));
+      return await saveAndReturn(cacheKey, payload.url, {
+        result_type: "mixed",
+        headline: synth.headline,
+        core_claims: synth.core_claims,
+        empirical_counter: { summary: empSummary, confidence: synth.empirical_counter.confidence, sources: empShown.map(pickFields) },
+        additional_context: { summary: ctxSummary, sources: ctxShown.map(pickFields) },
+        furtherReading: trimSources(all.filter((s) => !usedUrls.has(s.url)), 4),
+      });
+    }
+
+    const shown = validateShown(synth.used_sources, byId);
     const shownUrls = new Set(shown.map((s) => s.url));
     const data = {
       result_type: synth.result_type,
@@ -197,7 +248,7 @@ async function handleAnalyze(payload, onStage = null) {
       sources: shown.map(pickFields),
       furtherReading: trimSources(all.filter((s) => !shownUrls.has(s.url)), 4),
     };
-    return saveAndReturn(cacheKey, payload.url, data);
+    return await saveAndReturn(cacheKey, payload.url, data);
   } catch (err) {
     return { ok: false, error: err?.message ?? "The analysis request failed.", retryAfter: err?.retryAfter ?? 0, daily: err?.daily === true };
   }
@@ -214,6 +265,22 @@ function quoteAppears(quote, evidence) {
 }
 function normalize(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
 
+// Provenance gate for one used_sources list: keep cited sources whose quote is
+// really present; if none pass, fall back to the cited sources (synthesis still
+// reasoned over real abstracts) rather than showing a perspective with no sources.
+function validateShown(usedSources, byId) {
+  const used = Array.isArray(usedSources) ? usedSources : [];
+  const validated = [];
+  for (const u of used) {
+    const src = byId.get(u.id);
+    if (!src) continue;
+    if (quoteAppears(u.evidence_quote, src.evidence_text)) validated.push(src);
+  }
+  let shown = dedupByUrl(validated);
+  if (shown.length === 0) shown = dedupByUrl(used.map((u) => byId.get(u.id)).filter(Boolean));
+  return shown;
+}
+
 function pickFields(s) { return { title: s.title, url: s.url, publisher: s.publisher, kind: s.kind }; }
 function trimSources(arr, n) { return dedupByUrl(arr).slice(0, n).map(pickFields); }
 function dedupByUrl(arr) {
@@ -222,9 +289,13 @@ function dedupByUrl(arr) {
   return out;
 }
 
-function saveAndReturn(cacheKey, url, data) {
-  cacheSet(cacheKey, data);
-  urlCacheSet(url, data);
+async function saveAndReturn(cacheKey, url, data) {
+  if (data.result_type !== "none") {
+    await Promise.all([
+      cacheSet(cacheKey, data),
+      url ? urlCacheSet(url, data) : Promise.resolve(),
+    ]);
+  }
   return { ok: true, data };
 }
 
@@ -272,9 +343,7 @@ const CLASS_CACHE_KEY = "classifyCache";
 async function getClassification(payload) {
   const key = hashStr((payload.url || "") + "\n" + (payload.text || ""));
   const store = (await chrome.storage.local.get(CLASS_CACHE_KEY))[CLASS_CACHE_KEY] || {};
-  const entry = store[key];
-  if (entry && Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
-
+  if (store[key] && Date.now() - store[key].ts < CACHE_TTL_MS) return store[key].data;
   const { apiKey, byokProvider } = await chrome.storage.local.get(["apiKey", "byokProvider"]);
   const cls = await classify({ apiKey, provider: byokProvider ?? "groq", article: payload });
 

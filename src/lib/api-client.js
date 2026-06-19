@@ -39,17 +39,17 @@ export async function classify({ apiKey, provider = "groq", article }) {
   return parseClassification(content);
 }
 
-export async function synthesize({ apiKey, provider = "groq", article, articleType, coreClaim, evidence }) {
-  const messages = buildSynthMessages({ article, articleType, coreClaim, evidence });
+export async function synthesize({ apiKey, provider = "groq", article, articleType, coreClaim, claimType, evidence }) {
+  const messages = buildSynthMessages({ article, articleType, coreClaim, claimType, evidence });
   let content;
   if (apiKey) {
     content = await rawComplete({
       apiKey, provider, messages,
-      payloadForFallback: { stage: "synthesize", title: article.title, text: article.text, url: article.url, articleType, coreClaim, evidence },
+      payloadForFallback: { stage: "synthesize", title: article.title, text: article.text, url: article.url, articleType, coreClaim, claimType, evidence },
     });
   } else {
     content = await proxyComplete({
-      stage: "synthesize", title: article.title, text: article.text, url: article.url, articleType, coreClaim, evidence,
+      stage: "synthesize", title: article.title, text: article.text, url: article.url, articleType, coreClaim, claimType, evidence,
     });
   }
   return parseSynthesis(content);
@@ -85,7 +85,7 @@ async function rawComplete({ apiKey, provider, messages, payloadForFallback }) {
   const resp = await fetchWithTimeout(cfg.endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: cfg.model, messages, temperature: 0.1, response_format: { type: "json_object" }, stream: false }),
+    body: JSON.stringify({ model: cfg.model, messages, temperature: 0, response_format: { type: "json_object" }, stream: false }),
   });
   if (!resp.ok) {
     const detail = await safeErrorText(resp);
@@ -141,14 +141,42 @@ function parseClassification(content) {
     article_type: typeof p.article_type === "string" ? p.article_type : "news",
     core_claim: typeof p.core_claim === "string" ? p.core_claim : "",
     topic: typeof p.topic === "string" ? p.topic : "",
+    secondary_topic: typeof p.secondary_topic === "string" ? p.secondary_topic : "",
     research_query: typeof p.research_query === "string" ? p.research_query : "",
     expected_response_type: typeof p.expected_response_type === "string" ? p.expected_response_type : "unknown",
     claim_strength: typeof p.claim_strength === "number" ? Math.max(0, Math.min(1, p.claim_strength)) : 0.5,
+    claim_type: ["normative", "mixed"].includes(p.claim_type) ? p.claim_type : "empirical",
+    required_geography: Array.isArray(p.required_geography) ? p.required_geography.filter(g => typeof g === "string") : [],
   };
+}
+
+function parseUsedSources(arr) {
+  return Array.isArray(arr) ? arr.filter(u => u && typeof u.id === "string").map(u => ({
+    id: u.id,
+    supports_sentence: typeof u.supports_sentence === "string" ? u.supports_sentence : "",
+    evidence_quote: typeof u.evidence_quote === "string" ? u.evidence_quote : "",
+  })) : [];
 }
 
 function parseSynthesis(content) {
   const p = looseJson(content) || {};
+
+  // Mixed: two-part result, each half carrying its own provenance-checked sources.
+  if (p.result_type === "mixed") {
+    const block = (b) => ({
+      summary: typeof b?.summary === "string" ? b.summary : "",
+      confidence: typeof b?.confidence === "number" ? Math.max(0, Math.min(1, b.confidence)) : 0.5,
+      used_sources: parseUsedSources(b?.used_sources),
+    });
+    return {
+      result_type: "mixed",
+      headline: typeof p.headline === "string" ? p.headline : "",
+      core_claims: Array.isArray(p.core_claims) ? p.core_claims.map(String).slice(0, 4) : [],
+      empirical_counter: block(p.empirical_counter),
+      additional_context: block(p.additional_context),
+    };
+  }
+
   const type = p.result_type === "counter_perspective" || p.result_type === "additional_context" ? p.result_type : "none";
   if (type === "none") return { result_type: "none", reason: typeof p.reason === "string" ? p.reason : "" };
   return {
@@ -157,11 +185,7 @@ function parseSynthesis(content) {
     summary: typeof p.summary === "string" ? p.summary : "",
     core_claims: Array.isArray(p.core_claims) ? p.core_claims.map(String).slice(0, 4) : [],
     confidence: typeof p.confidence === "number" ? Math.max(0, Math.min(1, p.confidence)) : 0.5,
-    used_sources: Array.isArray(p.used_sources) ? p.used_sources.filter(u => u && typeof u.id === "string").map(u => ({
-      id: u.id,
-      supports_sentence: typeof u.supports_sentence === "string" ? u.supports_sentence : "",
-      evidence_quote: typeof u.evidence_quote === "string" ? u.evidence_quote : "",
-    })) : [],
+    used_sources: parseUsedSources(p.used_sources),
   };
 }
 
