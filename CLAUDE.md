@@ -33,42 +33,68 @@ Two-call evidence-first pipeline — every result is grounded in real fetched ab
 ```
 article text
   ↓
-Call 1 — classify (service worker → Worker proxy or BYOK)
-  → {analyzable, article_type, core_claim, topic, secondary_topic, research_query, claim_strength, claim_type}
-  → claim_type: empirical | normative | mixed.
+PREANALYZE (background, on page load)
+  Call 1 — classify only → {analyzable, claim_strength, topic, secondary_topic,
+                             research_query, claim_type, ...}
+  → claim_type: empirical | normative | mixed
       • normative (pure moral/theological): ranker penalizes empirical kinds (P_OFFDOMAIN) so
         reference/Wikipedia wins; synthesis outputs additional_context only (Notch 1).
-      • mixed (value claim + falsifiable premise, e.g. "rent control is a right because it prevents
-        poverty"): no penalty; synthesis returns result_type:"mixed" with TWO provenance-checked
-        blocks — empirical_counter (academic/preprint/government/legal) + additional_context
-        (reference only), rendered as two stacked panels (Notch 2). Source-kind FIREWALL in
-        service-worker physically drops wrong-kind sources per block (prompt alone leaked); a block
-        with no valid-kind source loses its summary. Classifier guardrail: a moral/theological claim
-        ("is evil/antichrist") is normative unless the article states an explicit measurable premise.
+      • mixed (value claim + falsifiable premise): no penalty; synthesis returns result_type:"mixed"
+        with TWO provenance-checked blocks — empirical_counter + additional_context, rendered as
+        two stacked panels (Notch 2). Source-kind FIREWALL in service-worker drops wrong-kind
+        sources per block. A block with no valid-kind source loses its summary.
+      • Classifier guardrail: a moral/theological claim is normative unless the article states
+        an explicit measurable premise.
+  → gray dot if analyzable && claim_strength ≥ CLAIM_THRESHOLD (0.4)
+  → result cached in classifyCache (shared with click)
   ↓
-code: fetchSources(query, topic, url, secondary_topic) — parallel keyless API calls
-  → fires the feed groups for BOTH topic and secondary_topic (shared feeds run once)
-  → each source tagged {origin: primary|secondary, age_tag, age_tier} (precomputed client-side)
-  → sources[], each with {evidence_text, usable} (usable = evidence_text ≥ 80 chars)
+ON CLICK (user opens panel)
+  Call 1 result — reused from classifyCache (no extra API call)
   ↓
-code: rankSources() — weighted composite scorer (lexical coverage + TF saturation + title boost
-      + source authority prior + log citation count − age penalty). Top-6 by score; hard-age
-      sources (>15y) then physically partitioned to bottom of array regardless of score.
-      age_tag rendered as its own line in prompt, never in evidence_text (provenance gate safe).
+  code: fetchSources(query, topic, url, secondary_topic) — parallel keyless API calls
+    → fires feed groups for BOTH topic and secondary_topic (shared feeds run once)
+    → each source tagged {origin: primary|secondary, age_tag, age_tier}
+    → sources[], each {evidence_text, usable} (usable = evidence_text.length ≥ 80)
   ↓
-Call 2 — synthesize (evidence passed in prompt)
-  → {result_type, headline, summary, core_claims, confidence, used_sources[{id, evidence_quote}]}
+  code: rankSources() — weighted composite scorer
+    (lexical coverage + TF saturation + title boost + source authority prior
+     + log citation count − age penalty)
+    → top-6 by score; hard-age sources (>15y) partitioned to bottom regardless of score
+    → age_tag rendered as its own line in prompt, never in evidence_text (provenance gate safe)
   ↓
-code: provenance gate — drop any used_source whose evidence_quote isn't in its evidence_text
+  Call 2 — synthesize (evidence passed in prompt)
+    → {result_type, headline, summary, core_claims, confidence, used_sources[{id, evidence_quote}]}
   ↓
-badge: green (counter) / blue (context) / gray (classify-only, pre-click) / none
+  code: provenance gate — drop any used_source whose evidence_quote isn't in its evidence_text
+    fallback: if ALL quotes fail, show cited sources anyway (synthesis still reasoned over real abstracts)
+  ↓
+  badge: green (counter) / blue (context) / clear gray if result is none
+  full result cached in analysisCache + urlCache
+```
+
+**Service worker constants:**
+```js
+CONF_THRESHOLD  = 0.7   // min confidence to show green/blue badge
+CLAIM_THRESHOLD = 0.4   // min claim_strength to show gray dot on preanalyze
+COLOR_COUNTER   = "#22c55e"  // green
+COLOR_CONTEXT   = "#3b82f6"  // blue
+COLOR_NEUTRAL   = "#9ca3af"  // gray (pre-click only)
 ```
 
 **Badge states:**
 - Gray dot → classify fired during page load, `analyzable=true` and `claim_strength ≥ 0.4`. Pre-click only, no synthesis.
 - Green dot → `result_type=counter_perspective`, `confidence ≥ 0.7`
 - Blue dot → `result_type=additional_context`, `confidence ≥ 0.7`
-- No dot → `none`, or below confidence threshold
+- No dot → `none`, below confidence threshold, or not analyzable
+
+**Caching (service-worker.js — all in chrome.storage.local):**
+| Cache key | What's stored | TTL |
+|---|---|---|
+| `classifyCache` | Call 1 result keyed by hash(url+text) | 30 days |
+| `analysisCache` | Full synthesis result keyed by hash(url+text) | 30 days |
+| `urlCache` | Full synthesis result keyed by URL (for badge restore on navigate) | 30 days |
+| `badgeCache` | Badge state string ("counter"/"context"/"neutral"/"none") keyed by URL | 7 days |
+| `feedbackCache` | Thumbs rating keyed by URL | local only |
 
 ## Key files
 
@@ -77,8 +103,13 @@ badge: green (counter) / blue (context) / gray (classify-only, pre-click) / none
 | `src/lib/sources.js` | Evidence layer — fetches real abstracts from keyless APIs |
 | `src/lib/prompt.js` | CLASSIFY_PROMPT + SYNTHESIS_PROMPT, buildClassifyMessages, buildSynthMessages |
 | `src/lib/api-client.js` | classify() and synthesize() — two non-streaming calls, proxy or BYOK |
-| `src/background/service-worker.js` | Orchestration, provenance gate, badge, caching |
-| `src/content/ui/panel.js` | Shadow DOM panel rendering |
+| `src/background/service-worker.js` | Orchestration, provenance gate, badge, all caches |
+| `src/content/loader.js` | Injected at document_idle — imports main.js as module, sends PREANALYZE |
+| `src/content/extractor.js` | Extracts article title + body text from the DOM |
+| `src/content/main.js` | Content script — opens panel port, handles TOGGLE_PANEL / STAGE / DONE |
+| `src/content/ui/panel.js` | Shadow DOM panel rendering (result, loading stages, further reading) |
+| `src/options/options.html` | Options page — BYOK key entry, preanalyze toggle |
+| `src/options/options.js` | Options page logic — key auto-detection from prefix |
 | `worker/index.js` | Cloudflare Worker — mirrors prompt.js byte-for-byte, KV cache v13 |
 | `manifest.json` | Version tracking — always bump before CWS upload |
 | `build-zip.ps1` | Builds Chrome + Firefox zips into dist/ |
@@ -87,32 +118,49 @@ badge: green (counter) / blue (context) / gray (classify-only, pre-click) / none
 
 | Feed | Kind | Has real abstract? | When fired |
 |---|---|---|---|
-| OpenAlex (filter=has_abstract:true) | academic | Yes | Always |
-| Europe PMC | academic | Yes | topic: health/medicine/science |
-| arXiv | preprint | Yes | topic: science/physics/technology |
-| Federal Register | government | Yes | topic: government/policy/environment |
-| CourtListener | legal | Yes | topic: law/legal/court |
-| ClinicalTrials.gov | academic | Yes | topic: health/medicine/science |
-| World Bank Documents | government | Yes (qterm param, abstracts["cdata!"]) | topic: finance/economics/environment |
+| OpenAlex (`filter=has_abstract:true`) | academic | Yes | Always |
+| Europe PMC | academic | Yes | topic: health / medicine / science |
+| arXiv | preprint | Yes | topic: science / physics / technology |
+| ClinicalTrials.gov | academic | Yes | topic: health / medicine / science |
+| NBER Working Papers | academic | Yes | topic: finance / economics |
+| Federal Register | government | Yes | topic: government / policy / environment |
+| World Bank Documents | government | Yes | topic: finance / economics / environment |
 | EPA (via Federal Register) | government | Yes | topic: environment |
-| NBER Working Papers | academic | Yes | topic: finance/economics |
+| CourtListener | legal | Yes | topic: law / legal / court |
 | Wikipedia (summary extract API) | reference | Yes | Always |
 | Google News RSS | news | No — further reading only | Always |
 | GDELT | news | No — further reading only | Always |
 
-`usable=true` sources (evidence_text ≥ 80 chars) go into the synthesis prompt. Everything else is "Further reading."
+`usable=true` sources (evidence_text ≥ 80 chars) go into the synthesis prompt.
+Everything else appears in "Further reading" in the panel. Synthesis may NEVER cite non-usable sources.
 
-Topics recognised by classify: health · science · law · finance · government · policy · politics · technology · economics · environment
+**Key source rules baked into sources.js:**
+- OpenAlex uses `filter=has_abstract:true` — critical for yield (without it most results lack an abstract)
+- Wikipedia fetches `/api/rest_v1/page/summary/{key}` for the real paragraph, not just the description
+- Federal Register is topic-gated to `government`, `policy`, or `environment` — NOT `politics`
+- Same-domain filter: sources from the article's own domain are dropped
+- Dropped feeds (no viable keyless API): SEC EDGAR, CRS/everycrsreport.com, UK Parliament Bills
+- Topics recognised: health · science · law · finance · government · policy · politics · technology · economics · environment
+- legislation.gov.uk (UK law) verified to return usable Atom `<summary>` text — NOT yet wired in, candidate for a UK gap fix
+
+## BYOK providers (src/lib/api-client.js + src/options/options.js)
+
+Provider is auto-detected from the key prefix — no dropdown needed.
+Supported: Groq, DeepSeek, OpenAI, OpenRouter, Cerebras, SambaNova, Gemini, xAI, Mistral, Perplexity, Together, Fireworks, Anthropic (claude-haiku-4-5-20251001).
+Invalid key → falls back to free proxy automatically.
 
 ## Cloudflare Worker
 
 - URL: `https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev`
-- Deploy: `cd worker && npx wrangler deploy`
+- Deploy: `cd worker && npx wrangler deploy` (run from inside the `worker/` folder)
 - First deploy on a new machine: `cd worker && npx wrangler login && npx wrangler deploy`
 - Secrets (already set server-side, don't re-add unless rotating):
   `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `SAMBANOVA_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`
 - KV cache version: `v13` — bump `CACHE_KEY_VERSION` in `worker/index.js` whenever a prompt changes
 - Provider chain: Groq → Cerebras → SambaNova → Gemini → OpenRouter → Workers AI
+- Worker and `src/lib/prompt.js` must stay in sync — CLASSIFY_PROMPT and SYNTHESIS_PROMPT are mirrored byte-for-byte
+- Privacy policy served at `/privacy` route on the worker — no external hosting needed
+- Feedback endpoint: `stage=feedback` with `{url, rating}` — stores `{up:N, down:N}` in KV (90-day TTL)
 
 ## CWS version state
 
@@ -122,14 +170,7 @@ Next submission must be **≥ 0.2.9**.
 
 Privacy policy live at: `https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev/privacy`
 Contact email: `flipsideextension@gmail.com` (personal email fully removed from codebase)
-Store listing copy + permission justifications: `store/listing.md` (updated — preanalyze behavior now accurately described)
-
-Dropped feeds (no viable keyless API as of 2026-06): SEC EDGAR (full-text search returns
-no text snippet, only metadata), CRS / everycrsreport.com (no JSON API — 404; congress.gov
-and govinfo require keys), UK Parliament Bills (longTitle needs N+1 per-bill fetch; slow/flaky).
-Finance/economics gap recovered via NBER working papers (verified real abstracts).
-legislation.gov.uk (UK law) verified to return usable Atom <summary> text — NOT yet wired in,
-candidate for the UK gap when wanted.
+Store listing copy + permission justifications: `store/listing.md` (updated)
 
 Rule: version must be strictly increasing. Even a rejected upload locks that number.
 Before every CWS upload: bump `manifest.json` version → `./build-zip.ps1` → upload `dist/FlipSide-vX.Y.Z-chrome.zip`.
@@ -138,23 +179,19 @@ Before every CWS upload: bump `manifest.json` version → `./build-zip.ps1` → 
 
 **Bugs fixed:**
 - Local classification cache was broken — `getClassification()` read the store but never checked if the key existed, so it always re-classified. Fixed.
-- Local result cache was broken — `saveAndReturn()` was a stub that discarded the result. Now writes to both content-hash cache and URL cache. Only non-"none" results are cached (so a bad first run doesn't stick and the user can retry).
-- Cloudflare Worker KV cache re-enabled in hot path — first user to analyze a URL computes the result, everyone else gets the same cached response (cross-user consistency). Only non-"none" results cached. 6h TTL.
+- Local result cache was broken — `saveAndReturn()` was a stub that discarded the result. Now writes to both content-hash cache and URL cache. Only non-"none" results are cached.
+- Cloudflare Worker KV cache re-enabled in hot path — first user to analyze a URL computes the result, everyone else gets the same cached response. Only non-"none" results cached. 6h TTL.
 
 **Features added:**
-- Thumbs 👍/👎 feedback at the bottom of every result panel. Rating stored locally (`feedbackCache` in chrome.storage.local) and POSTed to the worker as `stage=feedback`. Worker stores `{up:N, down:N}` per URL-hash in KV (90-day TTL). Useful for finding bad counters post-launch.
-- Privacy policy page served directly from the worker at `/privacy`. No external hosting needed.
-- Worker feedback endpoint: `stage=feedback` with `{url, rating}` body. Runs before text validation (no article text needed).
+- Thumbs 👍/👎 feedback at the bottom of every result panel. Rating stored locally (`feedbackCache`) and POSTed to the worker as `stage=feedback`.
+- Privacy policy page served directly from the worker at `/privacy`.
+- `claim_type` (normative/empirical/mixed) in classify — handles theological/opinion articles via normative routing to reference sources instead of failing with "none".
+- `secondary_topic` in classify — fires evidence feeds for two topic tags in parallel.
+- `rankSources()` — composite scorer replacing flat ordering.
 
-**Cleanup done:**
-- Stale dist zips (0.2.7, 0.2.8) deleted — only 0.2.9 remains in `dist/`
-- Personal email `salvatore.cuomo96@gmail.com` replaced with `flipsideextension@gmail.com` everywhere
-- `store/listing.md` privacy URL updated to the live worker page
-- `store/listing.md` permission descriptions corrected — previously falsely stated "only activates on click / does not run in background"; now accurately describes the preanalyze background call
-
-**Next session — Tier 1 improvements (approved by user, not yet built):**
+**Next session — Tier 1 improvements (approved, not yet built):**
 1. **Articulate silence** — when result_type is "none", explain *why* using signals already in `cls`: "Straight reporting — no contestable thesis", "Found research but none addresses this claim directly", etc. Mostly a prompt + panel change. High priority, very on-brand.
-2. **Feedback reason chips** — after a 👎, show 4 chips: "Not relevant · Factually wrong · Still one-sided · Sources weak". Extend the `stage=feedback` payload with `reason`. Small extension of what exists.
+2. **Feedback reason chips** — after a 👎, show 4 chips: "Not relevant · Factually wrong · Still one-sided · Sources weak". Extend the `stage=feedback` payload with `reason`.
 3. **Social proof** — surface aggregate helpfulness % (e.g. "84% found this helpful, n=37") from KV vote tallies. Needs a small read endpoint on the worker. Hide below n<10 floor.
 
 ## Build
