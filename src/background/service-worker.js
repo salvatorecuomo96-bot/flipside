@@ -280,6 +280,7 @@ async function handleAnalyze(payload, onStage = null) {
       apiKey, provider, article: payload,
       articleType: cls.article_type, coreClaim: cls.core_claim, claimType: cls.claim_type,
       evidence: usable, evidenceFingerprint,
+      bypassCache: payload.bypassNoneCache === true,
     });
     if (synth.result_type === "none") {
       return await saveAndReturn(cacheKey, payload.url, buildNoneData(synthesisSilenceReason(synth.reason, cls), cls, all));

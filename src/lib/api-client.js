@@ -29,28 +29,44 @@ const BYOK_PROVIDERS = {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export async function classify({ apiKey, provider = "groq", article }) {
+export async function classify({ apiKey, provider = "groq", article, bypassCache = false }) {
+  const proxyBody = {
+    stage: "classify",
+    title: article.title, text: article.text, url: article.url,
+    citation_schema: "stable-v1",
+    ...(bypassCache ? { bypassCache: true } : {}),
+  };
   let content;
   if (apiKey) {
-    content = await rawComplete({ apiKey, provider, messages: buildClassifyMessages(article), payloadForFallback: { stage: "classify", ...article } });
+    content = await rawComplete({
+      apiKey, provider,
+      messages: buildClassifyMessages(article),
+      payloadForFallback: proxyBody,
+    });
   } else {
-    content = await proxyComplete({ stage: "classify", title: article.title, text: article.text, url: article.url });
+    content = await proxyComplete(proxyBody);
   }
   return parseClassification(content);
 }
 
-export async function synthesize({ apiKey, provider = "groq", article, articleType, coreClaim, claimType, evidence }) {
+export async function synthesize({ apiKey, provider = "groq", article, articleType, coreClaim, claimType, evidence, evidenceFingerprint, bypassCache = false }) {
   const messages = buildSynthMessages({ article, articleType, coreClaim, claimType, evidence });
+  const proxyBody = {
+    stage: "synthesize",
+    title: article.title, text: article.text, url: article.url,
+    articleType, coreClaim, claimType, evidence,
+    citation_schema: "stable-v1",
+    ...(evidenceFingerprint ? { evidenceFingerprint } : {}),
+    ...(bypassCache ? { bypassCache: true } : {}),
+  };
   let content;
   if (apiKey) {
     content = await rawComplete({
       apiKey, provider, messages,
-      payloadForFallback: { stage: "synthesize", title: article.title, text: article.text, url: article.url, articleType, coreClaim, claimType, evidence },
+      payloadForFallback: proxyBody,
     });
   } else {
-    content = await proxyComplete({
-      stage: "synthesize", title: article.title, text: article.text, url: article.url, articleType, coreClaim, claimType, evidence,
-    });
+    content = await proxyComplete(proxyBody);
   }
   return parseSynthesis(content);
 }
