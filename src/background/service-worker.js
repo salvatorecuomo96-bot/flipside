@@ -12,7 +12,7 @@
 import { classify, synthesize } from "../lib/api-client.js";
 import { fetchSources, rankSources } from "../lib/sources.js";
 import { generateCitationToken } from "../lib/evidence-id.js";
-import { checkProvenance } from "../lib/provenance.js";
+import { buildCitationMap, validateShown, dedupByUrl } from "../lib/citation-resolver.js";
 import {
   classificationSilenceReason, synthesisSilenceReason,
   silenceShowsFurther, silenceExaminedClaim,
@@ -26,6 +26,24 @@ const EMPIRICAL_KINDS = new Set(["academic", "preprint", "government", "legal"])
 const COLOR_COUNTER = "#22c55e"; // green  — counter-perspective found
 const COLOR_CONTEXT = "#3b82f6"; // blue   — additional context found
 const COLOR_NEUTRAL = "#9ca3af"; // gray   — analyzable claim detected (pre-click)
+
+// --- One-time cache cleanup ----------
+// The v0.2.10 citation-token regression caused valid syntheses to collapse to
+// `evidence_too_weak`, which got cached locally. Worker KV is unaffected (it
+// holds the correct synthesis), so we only purge the poisoned local stores:
+// noneCache (articulated silences) and badgeCache (derived "none" badges).
+// API keys, BYOK choice, settings, feedback, and positive-result caches are
+// left untouched. Runs once, guarded by a stored flag.
+const CLEANUP_FLAG_KEY = "cleanup_citation_regression_v1";
+(async () => {
+  try {
+    const done = (await chrome.storage.local.get(CLEANUP_FLAG_KEY))[CLEANUP_FLAG_KEY];
+    if (done) return;
+    await chrome.storage.local.remove(["noneCache", "badgeCache"]);
+    await chrome.storage.local.set({ [CLEANUP_FLAG_KEY]: true });
+    console.log("[FlipSide] cleared poisoned noneCache + badgeCache (citation regression cleanup)");
+  } catch (e) { console.warn("[FlipSide] cache cleanup failed:", e?.message); }
+})();
 
 // --- Toolbar click -> toggle the panel ----------
 chrome.action.onClicked.addListener(async (tab) => {
@@ -267,8 +285,10 @@ async function handleAnalyze(payload, onStage = null) {
       return await saveAndReturn(cacheKey, payload.url, buildNoneData(synthesisSilenceReason(synth.reason, cls), cls, all));
     }
 
-    // VALIDATE provenance — keep only cited sources whose quote is really present
-    const byId = new Map(usable.map((s) => [s.id, s]));
+    // VALIDATE provenance — keep only cited sources whose quote is really present.
+    // The model cites by stable citation token; the resolver also accepts the
+    // internal sequential id so legacy/cached responses still resolve.
+    const byCitationId = buildCitationMap(usable);
 
     // MIXED — two provenance-checked blocks (empirical counter + moral context).
     // Code-level source-kind firewall: the empirical block may only show evidence-
@@ -276,9 +296,9 @@ async function handleAnalyze(payload, onStage = null) {
     // academic paper into the moral debate no matter what it emits. A block whose
     // sources are all filtered out loses its summary (no unsourced claims).
     if (synth.result_type === "mixed") {
-      const empShown = validateShown(synth.empirical_counter.used_sources, byId)
+      const empShown = validateShown(synth.empirical_counter.used_sources, byCitationId)
         .filter((s) => EMPIRICAL_KINDS.has(s.kind));
-      const ctxShown = validateShown(synth.additional_context.used_sources, byId)
+      const ctxShown = validateShown(synth.additional_context.used_sources, byCitationId)
         .filter((s) => s.kind === "reference");
       const empSummary = empShown.length ? synth.empirical_counter.summary : "";
       const ctxSummary = ctxShown.length ? synth.additional_context.summary : "";
@@ -300,7 +320,7 @@ async function handleAnalyze(payload, onStage = null) {
       });
     }
 
-    const shown = validateShown(synth.used_sources, byId);
+    const shown = validateShown(synth.used_sources, byCitationId);
     if (shown.length === 0) {
       return await saveAndReturn(cacheKey, payload.url, buildNoneData("evidence_too_weak", cls, all));
     }
@@ -320,21 +340,6 @@ async function handleAnalyze(payload, onStage = null) {
   }
 }
 
-// Provenance gate — uses the full checkProvenance matcher (token-span, ellipsis,
-// normalization). Resurrection fallback removed: if all quotes fail, the result
-// is evidence_too_weak rather than silently showing unverified citations.
-function validateShown(usedSources, byId) {
-  const used = Array.isArray(usedSources) ? usedSources : [];
-  const validated = [];
-  for (const u of used) {
-    const src = byId.get(u.id);
-    if (!src) continue;
-    const { matched } = checkProvenance(u.evidence_quote ?? "", src.evidence_text ?? "");
-    if (matched) validated.push(src);
-  }
-  return dedupByUrl(validated);
-}
-
 // Build a "none" result with an articulated reason. The reason code is canonical
 // (from silence.js); the panel maps it to fixed copy. examined_claim and further
 // reading are attached only where the reason warrants them.
@@ -351,11 +356,6 @@ function buildNoneData(reason, cls, allSources) {
 
 function pickFields(s) { return { title: s.title, url: s.url, publisher: s.publisher, kind: s.kind }; }
 function trimSources(arr, n) { return dedupByUrl(arr).slice(0, n).map(pickFields); }
-function dedupByUrl(arr) {
-  const seen = new Set(), out = [];
-  for (const s of arr) { if (!s?.url || seen.has(s.url)) continue; seen.add(s.url); out.push(s); }
-  return out;
-}
 
 async function saveAndReturn(cacheKey, url, data) {
   if (data.result_type === "none") {
