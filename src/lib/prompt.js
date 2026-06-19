@@ -93,7 +93,7 @@ For every source you consider citing, ask:
 2. If it disappeared, would your argument get weaker?
 3. Could it be cited in a serious essay defending the opposing position on THIS article?
 4. Is the connection obvious without explanation?
-5. Is this source in the same subject domain as the article's specific claim? A paper on foreign policy behaviour cannot support a domestic tax policy claim. A study on international trade cannot support a domestic criminal justice claim. Domain mismatch = discard, regardless of keyword overlap.
+5. Is this source in the same subject domain as the article's specific claim? A paper on foreign policy behaviour cannot support a domestic tax policy claim. A study on international trade cannot support a domestic criminal justice claim. A survey of wildfire policy attitudes cannot counter a claim about party electoral strategy. Domain mismatch = discard, regardless of keyword overlap. KEYWORD OVERLAP IS NOT RELEVANCE: sharing a country, party name, person's name, or topic word does not make a source on-domain — the source's subject matter must directly address the article claim's mechanism and subject matter.
 If any answer is NO → discard it. Three strongly-supporting sources beat ten loosely-related ones.
 
 ═══ RESPONSE TYPE (choose one) ═══
@@ -130,14 +130,18 @@ Do not manufacture balance or false equivalence. One side may be better supporte
 A reference source (Wikipedia or similar encyclopedic summary) may define concepts, explain historical framing, and summarize established debates. It may NOT, by itself, support claims about: current policy effectiveness, legal obligations, causal effects, present-day behavior of governments, companies, parties, or individuals, or current public opinion. If your only validated evidence is a reference source, limit your summary to 2–3 concise sentences and use additional_context — never counter_perspective. Do not set confidence above 0.55 when only reference evidence is available.
 
 ═══ EVIDENCE SCOPE ═══
-Match your summary length to your evidence strength. One narrow validated source supports one focused point — not a multi-claim paragraph. If you have one weak or narrow source: 2–3 sentences maximum. Two independent strong sources: up to 4 sentences. Three or more: normal 3–6 sentences. Do not inflate length to appear more authoritative. Every factual sentence must be directly supportable by a cited source's evidence_text.
+Hard sentence limits — enforced, not advisory:
+• 1 validated source → 2 sentences maximum. One source supports one point. Do not chain inferences or add a conclusion sentence that goes beyond what the evidence_text directly states.
+• 2 independent validated sources → 3–4 sentences maximum.
+• 3 or more → 3–6 sentences.
+Every sentence must be directly supportable by a named cited source. Longer is not more credible — a tight 2-sentence counter from one strong source beats an inflated paragraph.
 
 ═══ PROVENANCE ═══
 For each source you cite: give its exact id, the sentence in your summary it supports, and an EXACT VERBATIM QUOTE of at least 8 words and at least 35 characters from that source's evidence_text. Do not paraphrase. Do not shorten a quote below 8 words. This is checked against the source text — a quote not found verbatim in the evidence is rejected. If you cannot produce a qualifying real quote, do not cite the source.
 
 ═══ OUTPUT (JSON only, nothing else) ═══
 If result exists (empirical or normative claim):
-{"result_type":"counter_perspective|additional_context","headline":"<≤9-word title>","summary":"<3–6 sentences — must name the article's specific implied conclusion and argue directly against it>","core_claims":["<article's load-bearing claims, 1–3 items>"],"confidence":<0.0-1.0>,"used_sources":[{"id":"<evidence id>","supports_sentence":"<the sentence it backs>","evidence_quote":"<verbatim phrase from that evidence_text>"}]}
+{"result_type":"counter_perspective|additional_context","headline":"<≤9-word title>","summary":"<2 sentences if 1 source, up to 4 if 2 sources, up to 6 if 3+ — must name the article's specific implied conclusion and argue directly against it>","core_claims":["<article's load-bearing claims, 1–3 items>"],"confidence":<0.0-1.0>,"used_sources":[{"id":"<evidence id>","supports_sentence":"<the sentence it backs>","evidence_quote":"<verbatim phrase from that evidence_text>"}]}
 If CLAIM_TYPE is mixed (two-part — each half cites ONLY its own source kind; every used_source still needs a verbatim evidence_quote):
 {"result_type":"mixed","headline":"<≤9-word title>","core_claims":["<1–3 items>"],"empirical_counter":{"summary":"<challenge the factual premise; ACADEMIC sources only>","confidence":<0.0-1.0>,"used_sources":[{"id":"<...>","supports_sentence":"<...>","evidence_quote":"<verbatim>"}]},"additional_context":{"summary":"<frame the moral debate; REFERENCE sources only>","used_sources":[{"id":"<...>","supports_sentence":"<...>","evidence_quote":"<verbatim>"}]}}
 If no credible result, choose the SINGLE most accurate reason code:

@@ -204,6 +204,20 @@ function checkExtractionCompleteness(text, paywallDetected) {
   return { ok: true };
 }
 
+// Post-synthesis confidence calibration — deterministic caps by validated source
+// count and kind, applied after the provenance gate so only real citations count.
+//   reference-only  → max 0.55 (encyclopedic sources can't support strong claims)
+//   1 validated     → max 0.65
+//   2 validated     → max 0.80
+//   3+              → max 0.90
+function calibrateConfidence(raw, validatedSources) {
+  const n = validatedSources.length;
+  if (n === 0) return 0;
+  const allRef = validatedSources.every(s => s.kind === "reference");
+  const cap = allRef ? 0.55 : n === 1 ? 0.65 : n === 2 ? 0.80 : 0.90;
+  return Math.min(raw, cap);
+}
+
 // --- The pipeline ----------
 async function handleAnalyze(payload, onStage = null) {
   const cacheKey = hashStr((payload.url || "") + "\n" + (payload.text || ""));
@@ -315,7 +329,7 @@ async function handleAnalyze(payload, onStage = null) {
         result_type: "mixed",
         headline: synth.headline,
         core_claims: synth.core_claims,
-        empirical_counter: { summary: empSummary, confidence: synth.empirical_counter.confidence, sources: empShown.map(pickFields) },
+        empirical_counter: { summary: empSummary, confidence: calibrateConfidence(synth.empirical_counter.confidence, empShown), sources: empShown.map(pickFields) },
         additional_context: { summary: ctxSummary, sources: ctxShown.map(pickFields) },
         furtherReading: trimSources(all.filter((s) => !usedUrls.has(s.url)), 4),
       });
@@ -331,7 +345,7 @@ async function handleAnalyze(payload, onStage = null) {
       headline: synth.headline,
       summary: synth.summary,
       core_claims: synth.core_claims,
-      confidence: synth.confidence,
+      confidence: calibrateConfidence(synth.confidence, shown),
       sources: shown.map(pickFields),
       furtherReading: trimSources(all.filter((s) => !shownUrls.has(s.url)), 4),
     };
