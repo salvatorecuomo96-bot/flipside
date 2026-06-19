@@ -114,8 +114,14 @@ Each source shows its publication year; compare it to TODAY'S DATE (given below)
 ═══ ANTI-BIAS ═══
 Do not manufacture balance or false equivalence. One side may be better supported. Accuracy over symmetry.
 
+═══ REFERENCE SOURCE SCOPE ═══
+A reference source (Wikipedia or similar encyclopedic summary) may define concepts, explain historical framing, and summarize established debates. It may NOT, by itself, support claims about: current policy effectiveness, legal obligations, causal effects, present-day behavior of governments, companies, parties, or individuals, or current public opinion. If your only validated evidence is a reference source, limit your summary to 2–3 concise sentences and use additional_context — never counter_perspective. Do not set confidence above 0.55 when only reference evidence is available.
+
+═══ EVIDENCE SCOPE ═══
+Match your summary length to your evidence strength. One narrow validated source supports one focused point — not a multi-claim paragraph. If you have one weak or narrow source: 2–3 sentences maximum. Two independent strong sources: up to 4 sentences. Three or more: normal 3–6 sentences. Do not inflate length to appear more authoritative. Every factual sentence must be directly supportable by a cited source's evidence_text.
+
 ═══ PROVENANCE ═══
-For each source you cite: give its exact id, the sentence in your summary it supports, and a SHORT VERBATIM QUOTE from that source's evidence_text (this is checked — a quote not present in the evidence is rejected). If you cannot produce a real quote, do not cite the source.
+For each source you cite: give its exact id, the sentence in your summary it supports, and an EXACT VERBATIM QUOTE of at least 8 words and at least 35 characters from that source's evidence_text. Do not paraphrase. Do not shorten a quote below 8 words. This is checked against the source text — a quote not found verbatim in the evidence is rejected. If you cannot produce a qualifying real quote, do not cite the source.
 
 ═══ OUTPUT (JSON only, nothing else) ═══
 If result exists (empirical or normative claim):
@@ -254,7 +260,7 @@ async function generate(env, messages) {
 // --- KV cache ----------------------------------------------------------------
 const CACHE_TTL = 6 * 60 * 60;
 const CACHE_KEY_VERSION_LEGACY = "v14"; // URL-keyed — old clients without citation_schema
-const CACHE_KEY_VERSION_STABLE = "v15"; // content-keyed — clients sending citation_schema:"stable-v1"
+const CACHE_KEY_VERSION_STABLE = "v16"; // content-keyed — clients sending citation_schema:"stable-v1"
 
 // djb2 hash over a multi-part key string
 function djb2(str) {
