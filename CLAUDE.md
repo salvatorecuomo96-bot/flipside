@@ -11,6 +11,11 @@ rotating provider chain.
 - Opus — architecture decisions, multi-file design tradeoffs, prompt engineering, subtle debugging
 Include one sentence of reasoning, e.g. "Sonnet — mechanical edit to one file."
 
+**Flag the Opus→Sonnet handoff explicitly.** When a task is designed/debugged on Opus and the
+remaining work is just implementing the agreed plan, say so BEFORE you start coding — e.g. "Design
+is locked; you can switch to Sonnet for the build to save tokens." Give the user the chance to
+downgrade at the thinking→coding boundary rather than burning Opus tokens on mechanical edits.
+
 **Always ask before building.** When the user asks "can we do X?" respond with options and
 tradeoffs and wait for confirmation. A question is not permission. Coding before confirming
 is explicitly unwanted.
