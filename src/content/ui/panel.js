@@ -389,23 +389,48 @@ function linkifySource(str) {
 function wireFeedback(shadow, url) {
   const upBtn = shadow.querySelector(".ec-feedback-up");
   const downBtn = shadow.querySelector(".ec-feedback-down");
+  const reasonsRow = shadow.querySelector(".ec-feedback-reasons");
   if (!upBtn || !downBtn || !url) return;
+
   chrome.runtime.sendMessage({ type: "GET_FEEDBACK", url }, (resp) => {
     const rating = resp?.rating ?? null;
     if (rating === "up") upBtn.classList.add("ec-fb-selected");
-    if (rating === "down") downBtn.classList.add("ec-fb-selected");
+    if (rating === "down") { downBtn.classList.add("ec-fb-selected"); reasonsRow?.removeAttribute("hidden"); }
   });
+
   upBtn.addEventListener("click", () => {
     const wasSelected = upBtn.classList.contains("ec-fb-selected");
     upBtn.classList.toggle("ec-fb-selected", !wasSelected);
     downBtn.classList.remove("ec-fb-selected");
+    reasonsRow?.setAttribute("hidden", "");
+    shadow.querySelectorAll(".ec-reason-chip").forEach(c => c.classList.remove("ec-chip-selected"));
     chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: wasSelected ? null : "up" });
   });
+
   downBtn.addEventListener("click", () => {
     const wasSelected = downBtn.classList.contains("ec-fb-selected");
     downBtn.classList.toggle("ec-fb-selected", !wasSelected);
     upBtn.classList.remove("ec-fb-selected");
+    if (!wasSelected) {
+      reasonsRow?.removeAttribute("hidden");
+    } else {
+      reasonsRow?.setAttribute("hidden", "");
+      shadow.querySelectorAll(".ec-reason-chip").forEach(c => c.classList.remove("ec-chip-selected"));
+    }
     chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: wasSelected ? null : "down" });
+  });
+
+  shadow.querySelectorAll(".ec-reason-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const alreadySelected = chip.classList.contains("ec-chip-selected");
+      shadow.querySelectorAll(".ec-reason-chip").forEach(c => c.classList.remove("ec-chip-selected"));
+      if (!alreadySelected) {
+        chip.classList.add("ec-chip-selected");
+        chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down", reason: chip.dataset.reason });
+      } else {
+        chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down" });
+      }
+    });
   });
 }
 
@@ -418,6 +443,12 @@ function renderFeedbackHtml() {
     <button class="ec-feedback-down" title="No">
       <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M18 9.5a1.5 1.5 0 11-3 0v-6a1.5 1.5 0 013 0v6zM14 9.667v-5.43a2 2 0 00-1.105-1.79l-.05-.025A4 4 0 0011.055 2H5.64a2 2 0 00-1.962 1.608l-1.2 6A2 2 0 004.44 12H8v4a2 2 0 002 2 1 1 0 001-1v-.667L14 9.667z"/></svg>
     </button>
+  </div>
+  <div class="ec-feedback-reasons" hidden>
+    <button class="ec-reason-chip" data-reason="not_relevant">Not relevant</button>
+    <button class="ec-reason-chip" data-reason="factually_wrong">Factually wrong</button>
+    <button class="ec-reason-chip" data-reason="still_one_sided">Still one-sided</button>
+    <button class="ec-reason-chip" data-reason="sources_weak">Sources weak</button>
   </div>`;
 }
 
@@ -834,6 +865,35 @@ const TEMPLATE = `
       background: rgba(248, 113, 113, 0.15);
       border-color: rgba(248, 113, 113, 0.4);
       transform: scale(1.08);
+    }
+    .ec-feedback-reasons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 0 4px;
+    }
+    .ec-feedback-reasons[hidden] { display: none; }
+    .ec-reason-chip {
+      all: unset;
+      cursor: pointer;
+      font-size: 11px;
+      font-family: inherit;
+      color: var(--ec-muted);
+      border: 1px solid var(--ec-border);
+      border-radius: 12px;
+      padding: 3px 10px;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .ec-reason-chip:hover {
+      color: var(--ec-text);
+      border-color: var(--ec-muted);
+      background: var(--ec-hover);
+    }
+    .ec-reason-chip.ec-chip-selected {
+      color: var(--ec-red);
+      background: rgba(248, 113, 113, 0.1);
+      border-color: rgba(248, 113, 113, 0.4);
     }
 
     /* ── Footer ── */

@@ -161,25 +161,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
   if (msg?.type === "FEEDBACK") {
-    const { url, rating } = msg;
+    const { url, rating, reason } = msg;
     if (!url) return false;
     chrome.storage.local.get("feedbackCache").then(({ feedbackCache = {} }) => {
       if (rating === null) delete feedbackCache[url];
-      else if (rating === "up" || rating === "down") feedbackCache[url] = rating;
+      else if (rating === "up" || rating === "down") feedbackCache[url] = { rating, reason: reason || null };
       chrome.storage.local.set({ feedbackCache });
     });
     if (rating === "up" || rating === "down") {
       fetch(PROXY_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Origin": `chrome-extension://${chrome.runtime.id}` },
-        body: JSON.stringify({ stage: "feedback", url, rating }),
+        body: JSON.stringify({ stage: "feedback", url, rating, ...(reason ? { reason } : {}) }),
       }).catch(() => {});
     }
     return false;
   }
   if (msg?.type === "GET_FEEDBACK") {
     chrome.storage.local.get("feedbackCache").then(({ feedbackCache = {} }) => {
-      sendResponse({ rating: feedbackCache[msg.url] ?? null });
+      const entry = feedbackCache[msg.url] ?? null;
+      // Support both old string format and new {rating, reason} format
+      const rating = entry ? (typeof entry === "string" ? entry : entry.rating) : null;
+      sendResponse({ rating });
     });
     return true;
   }

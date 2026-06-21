@@ -398,9 +398,11 @@ export default {
       stage = "classify", title = "", text = "", url = "",
       articleType = "", coreClaim = "", claimType = "empirical",
       claim_holder = "author", article_stance = "endorses", attribution = "",
-      evidence = [], rating = "",
+      evidence = [], rating = "", reason = "",
       citation_schema = "", bypassCache = false, evidenceFingerprint = "",
     } = body;
+
+    const VALID_REASONS = new Set(["not_relevant", "factually_wrong", "still_one_sided", "sources_weak"]);
 
     // Feedback — handled before text validation (no article text needed)
     if (stage === "feedback") {
@@ -408,9 +410,12 @@ export default {
       if (!url) return json({ error: "URL required." }, 400);
       const fbKey = `fb:${buildLegacyCacheKey("u", url)}`;
       const existing = await kvGet(env, fbKey);
-      let counts = { up: 0, down: 0 };
-      if (existing) { try { counts = JSON.parse(existing); } catch {} }
+      let counts = { up: 0, down: 0, reasons: {} };
+      if (existing) { try { counts = { reasons: {}, ...JSON.parse(existing) }; } catch {} }
       counts[rating] = (counts[rating] || 0) + 1;
+      if (rating === "down" && reason && VALID_REASONS.has(reason)) {
+        counts.reasons[reason] = (counts.reasons[reason] || 0) + 1;
+      }
       ctx.waitUntil(kvSet(env, fbKey, JSON.stringify(counts), 60 * 60 * 24 * 90));
       return json({ ok: true });
     }
