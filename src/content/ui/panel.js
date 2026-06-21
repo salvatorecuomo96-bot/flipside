@@ -422,13 +422,10 @@ function wireFeedback(shadow, url) {
 
   shadow.querySelectorAll(".ec-reason-chip").forEach(chip => {
     chip.addEventListener("click", () => {
-      const alreadySelected = chip.classList.contains("ec-chip-selected");
-      shadow.querySelectorAll(".ec-reason-chip").forEach(c => c.classList.remove("ec-chip-selected"));
-      if (!alreadySelected) {
-        chip.classList.add("ec-chip-selected");
-        chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down", reason: chip.dataset.reason });
-      } else {
-        chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down" });
+      chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down", reason: chip.dataset.reason });
+      if (reasonsRow) {
+        reasonsRow.innerHTML = `<span class="ec-feedback-thanks">Thanks for your feedback!</span>`;
+        reasonsRow.removeAttribute("hidden");
       }
     });
   });
@@ -894,6 +891,11 @@ const TEMPLATE = `
       color: var(--ec-red);
       background: rgba(248, 113, 113, 0.1);
       border-color: rgba(248, 113, 113, 0.4);
+    }
+    .ec-feedback-thanks {
+      font-size: 11px;
+      color: var(--ec-muted);
+      font-style: italic;
     }
 
     /* ── Footer ── */
