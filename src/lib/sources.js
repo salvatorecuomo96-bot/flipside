@@ -75,6 +75,9 @@ export async function fetchSources(query, topic = "", articleUrl = "", secondary
   };
 
   // De-dupe by URL, drop self-links, collect candidates.
+  // Also drop news items whose title closely matches the article title — catches
+  // self-links that arrive via Google News redirect URLs (domain != articleDomain).
+  const articleTitleTokens = new Set(tokenize(wikiQ)); // wikiQ = articleTitle when available
   const seen = new Set();
   const candidates = [];
   for (const s of ranked) {
@@ -82,6 +85,12 @@ export async function fetchSources(query, topic = "", articleUrl = "", secondary
     const key = s.url.replace(/[#?].*$/, "").replace(/\/+$/, "").toLowerCase();
     if (seen.has(key)) continue;
     if (articleDomain && extractDomain(s.url) === articleDomain) continue;
+    if (s.kind === "news" && articleTitleTokens.size >= 4) {
+      const srcTokens = new Set(tokenize(s.title));
+      let overlap = 0;
+      for (const t of articleTitleTokens) if (srcTokens.has(t)) overlap++;
+      if (overlap / articleTitleTokens.size > 0.5) continue; // >50% title match → self-link
+    }
     seen.add(key);
     candidates.push(s);
     if (candidates.length >= 16) break;
@@ -290,6 +299,11 @@ function addTopicJobs(jobs, q, topic, fired, origin = "primary") {
   if (["finance", "economics"].includes(t)) {
     add("worldBank", () => fetchWorldBank(q), CAP.worldBank);
     add("nber",      () => fetchNBER(q),      CAP.nber);
+  }
+  if (["politics"].includes(t)) {
+    add("worldBank", () => fetchWorldBank(q), CAP.worldBank);
+    add("nber",      () => fetchNBER(q),      CAP.nber);
+    add("fedRegister", () => fetchFederalRegister(q), CAP.fedRegister);
   }
   if (["environment"].includes(t)) {
     add("worldBank",   () => fetchWorldBank(q),       CAP.worldBank);
