@@ -49,12 +49,21 @@ export async function classify({ apiKey, provider = "groq", article, bypassCache
   return parseClassification(content);
 }
 
-export async function synthesize({ apiKey, provider = "groq", article, articleType, coreClaim, claimType, evidence, evidenceFingerprint, bypassCache = false }) {
-  const messages = buildSynthMessages({ article, articleType, coreClaim, claimType, evidence });
+export async function synthesize({
+  apiKey, provider = "groq", article, articleType, coreClaim, claimType,
+  claimHolder = "author", articleStance = "endorses", attribution = "",
+  evidence, evidenceFingerprint, bypassCache = false,
+}) {
+  const messages = buildSynthMessages({
+    article, articleType, coreClaim, claimType,
+    claimHolder, articleStance, attribution,
+    evidence,
+  });
   const proxyBody = {
     stage: "synthesize",
     title: article.title, text: article.text, url: article.url,
     articleType, coreClaim, claimType, evidence,
+    claim_holder: claimHolder, article_stance: articleStance, attribution,
     citation_schema: "stable-v1",
     ...(evidenceFingerprint ? { evidenceFingerprint } : {}),
     ...(bypassCache ? { bypassCache: true } : {}),

@@ -111,6 +111,14 @@ Step 1 — What specific conclusion does this article lead a reader to? Not the 
 Step 2 — What would a well-informed, intellectually honest person who disputes THAT conclusion argue, using only the evidence provided?
 Your summary must be the answer to Step 2. If it does not directly engage the article's specific implied conclusion, it has failed.
 
+═══ ATTRIBUTION TARGET ═══
+Read CLAIM_HOLDER, ARTICLE_STANCE, ATTRIBUTION, and CHALLENGE_TARGET before writing.
+• CHALLENGE_TARGET=journalist — challenge the article's own adopted thesis.
+• CHALLENGE_TARGET=quoted_speaker — challenge the attributed person's or group's claim. Name that speaker/group in the headline, summary, and core_claims when needed. Do NOT write "the article argues" or "the article claims" when the article merely reports that source's view.
+• CHALLENGE_TARGET=reported_dispute — the article reports competing positions. Do not invent a single article thesis. If the article does not adopt a side and the evidence cannot materially clarify the dispute, return "none".
+• Opinion and analysis articles can still contain quoted claims. If CLAIM_HOLDER=quoted_source, preserve the quoted claim holder even inside opinion/analysis.
+Every output core_claims item must preserve attribution when the claim holder is not the journalist.
+
 ═══ ANTI-GENERIC RULE (hard filter) ═══
 If your summary could be copy-pasted onto a different article about the same general topic without changing a word, return "none" instead.
 Failing examples:
@@ -189,9 +197,9 @@ If no credible result, choose the SINGLE most accurate reason code:
   • normative_unresolved — the claim is moral/theological and no reference evidence could illuminate the specific debate.`;
 
 /**
- * @param {{article:{title,text,url}, articleType:string, coreClaim:string, evidence:Source[]}} input
+ * @param {{article:{title,text,url}, articleType:string, coreClaim:string, claimHolder:string, articleStance:string, attribution:string, evidence:Source[]}} input
  */
-export function buildSynthMessages({ article, articleType, coreClaim, claimType, evidence }) {
+export function buildSynthMessages({ article, articleType, coreClaim, claimType, claimHolder, articleStance, attribution, evidence }) {
   const evidenceBlock = evidence.length
     ? evidence.map(e => [
         `[${e.citationToken ?? e.id}] (${e.kind}${e.year ? `, ${e.year}` : ""}) ${e.title}`,
@@ -204,6 +212,10 @@ export function buildSynthMessages({ article, articleType, coreClaim, claimType,
     `TODAY'S DATE: ${new Date().toISOString().slice(0, 10)}`,
     `ARTICLE_TYPE: ${articleType || "news"}`,
     `CLAIM_TYPE: ${claimType || "empirical"}`,
+    `CLAIM_HOLDER: ${claimHolder || "author"}`,
+    `ARTICLE_STANCE: ${articleStance || "endorses"}`,
+    `ATTRIBUTION: ${attribution || ""}`,
+    `CHALLENGE_TARGET: ${challengeTargetLabel(claimHolder, articleStance)}`,
     `CORE_CLAIM: ${coreClaim || "(none extracted)"}`,
     "",
     "ARTICLE TEXT (may be truncated):",
@@ -221,4 +233,13 @@ export function buildSynthMessages({ article, articleType, coreClaim, claimType,
     { role: "system", content: SYNTHESIS_PROMPT },
     { role: "user", content: user },
   ];
+}
+
+function challengeTargetLabel(claimHolder, articleStance) {
+  if (claimHolder === "author") return "journalist";
+  if (claimHolder === "quoted_source") return "quoted_speaker";
+  if (claimHolder === "multiple_sources") return "reported_dispute";
+  if (articleStance === "reports") return "quoted_speaker";
+  if (articleStance === "contrasts") return "reported_dispute";
+  return "unclear_claim_holder";
 }
