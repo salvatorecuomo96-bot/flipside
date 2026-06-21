@@ -16,6 +16,10 @@ secrets.json
 dist/
 *.zip
 
+# Local screenshots / manual-test artifacts
+screenshots/
+test/articles/last-run.json
+
 # Editor / OS cruft
 .vscode/
 .idea/
