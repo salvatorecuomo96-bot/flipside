@@ -3,7 +3,13 @@
 //
 // Match strategy (in order):
 //   1. Full contiguous token-span — all quote tokens appear in order, adjacent.
-//   2. Ellipsis split — quote contains "…" or "..."; each part matches a span
+//   2. Bounded-gap span — all quote tokens appear IN ORDER, but the model may have
+//      dropped a few connective words present in the evidence (e.g. "and", "the").
+//      Forgives evidence tokens SKIPPED between matched quote tokens up to a small
+//      budget; NEVER forgives a quote token absent from the evidence. This recovers
+//      honest near-verbatim quotes (LLMs routinely tighten quotes) without lowering
+//      the anti-hallucination bar — a fabricated word still fails.
+//   3. Ellipsis split — quote contains "…" or "..."; each part matches a span
 //      in the evidence; total token gap between parts ≤ 40.
 //
 // Minimum thresholds (applied before any span search):
@@ -54,6 +60,26 @@ function findSpan(tokens, pattern, fromIndex = 0) {
   return -1;
 }
 
+// Like findSpan, but allows up to `maxGap` evidence tokens (total across the span)
+// to be skipped between consecutive matched quote tokens. The first quote token
+// must anchor an exact match; every subsequent quote token must still be found in
+// order — a quote token absent from the evidence can never be skipped, so this only
+// forgives words the model DROPPED, never words it INVENTED. Greedy and therefore
+// conservative: it may miss some valid gappy alignments, but it never false-accepts.
+function findBoundedGapSpan(tokens, pattern, maxGap) {
+  if (pattern.length === 0) return -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] !== pattern[0]) continue;
+    let ei = i + 1, pj = 1, gap = 0;
+    while (pj < pattern.length && ei < tokens.length) {
+      if (tokens[ei] === pattern[pj]) { pj++; ei++; }
+      else { gap++; if (gap > maxGap) break; ei++; }
+    }
+    if (pj === pattern.length) return i;
+  }
+  return -1;
+}
+
 /**
  * Check whether `quote` is genuinely present in `evidenceText`.
  *
@@ -77,7 +103,12 @@ export function checkProvenance(quote, evidenceText) {
   // Strategy 1: full contiguous span
   if (findSpan(eToks, qToks) !== -1) return { matched: true };
 
-  // Strategy 2: ellipsis split
+  // Strategy 2: bounded-gap span — recovers honest quotes that dropped connective
+  // words. Budget scales with quote length (~30%), capped at 6 skipped tokens.
+  const maxGap = Math.min(6, Math.ceil(qToks.length * 0.3));
+  if (findBoundedGapSpan(eToks, qToks, maxGap) !== -1) return { matched: true };
+
+  // Strategy 3: ellipsis split
   if (normQ.includes("…") || normQ.includes("...")) {
     const rawParts = normQ.split(/\.{3}|…/);
     const parts = rawParts.map(p => tokenize(p.trim())).filter(p => p.length > 0);

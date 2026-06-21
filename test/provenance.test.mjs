@@ -44,11 +44,26 @@ test("ellipsis gap exceeding 40 tokens does not match", () => {
   assert.equal(typeof r.matched, "boolean"); // just verify it returns valid shape
 });
 
-test("quote with exactly 8 tokens passes threshold check", () => {
-  // 8 distinct meaningful tokens — threshold boundary
+test("bounded-gap: honest quote dropping connective words matches", () => {
+  // Model dropped "by", "among", "aged" — every quoted word is real and in order.
+  // EVIDENCE: "...daily aspirin use reduced cardiovascular events by twenty-three
+  // percent among adults aged fifty to seventy-five..."
   const quote = "daily aspirin use reduced cardiovascular events twenty-three percent adults fifty";
-  // Not contiguous in EVIDENCE → no_span_found (not too_short)
+  assert.deepEqual(checkProvenance(quote, EVIDENCE), { matched: true });
+});
+
+test("bounded-gap: fabricated word absent from evidence still fails", () => {
+  // "weekly" is not in EVIDENCE — a dropped word is forgiven, an invented one is not.
+  const quote = "weekly aspirin use reduced cardiovascular events twenty-three percent adults fifty";
   const r = checkProvenance(quote, EVIDENCE);
   assert.equal(r.matched, false);
   assert.equal(r.reason, "no_span_found");
+});
+
+test("bounded-gap: too many dropped words exceeds budget and fails", () => {
+  // Skipping a large stretch of evidence words (> ~30% gap budget) must not match —
+  // scattered tokens across the abstract are not a real quote.
+  const quote = "randomized aspirin cardiovascular adults seventy-five disease stroke study authors";
+  const r = checkProvenance(quote, EVIDENCE);
+  assert.equal(r.matched, false);
 });
