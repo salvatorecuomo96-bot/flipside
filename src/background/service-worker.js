@@ -201,7 +201,11 @@ function checkExtractionCompleteness(text, paywallDetected) {
   const t = (text || "").trim();
   const wordCount = t.split(/\s+/).filter(Boolean).length;
   if (wordCount < 80) return { ok: false, reason: "too_short" };
-  if (paywallDetected || (wordCount < 350 && PAYWALL_RE.test(t.slice(0, 800)))) {
+  // If we extracted ≥400 words the article is clearly readable — DOM paywall
+  // selectors can fire on ad-containers and subscription upsell elements that
+  // exist even on fully accessible pages (e.g. Daily Mail).
+  const likelyPaywalled = wordCount < 400 && paywallDetected;
+  if (likelyPaywalled || (wordCount < 350 && PAYWALL_RE.test(t.slice(0, 800)))) {
     return { ok: false, reason: "paywall_detected", paywall_detected: true };
   }
   return { ok: true };
