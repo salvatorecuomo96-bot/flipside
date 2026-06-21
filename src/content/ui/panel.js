@@ -392,50 +392,36 @@ function wireFeedback(shadow, url) {
   const reasonsRow = shadow.querySelector(".ec-feedback-reasons");
   if (!upBtn || !downBtn || !url) return;
 
-  chrome.runtime.sendMessage({ type: "GET_FEEDBACK", url }, (resp) => {
-    const rating = resp?.rating ?? null;
-    if (rating === "up") upBtn.classList.add("ec-fb-selected");
-    if (rating === "down") { downBtn.classList.add("ec-fb-selected"); reasonsRow?.removeAttribute("hidden"); }
-  });
-
-  upBtn.addEventListener("click", () => {
-    upBtn.classList.add("ec-fb-selected");
-    downBtn.classList.remove("ec-fb-selected");
-    downBtn.disabled = true;
+  function lockFeedback(rating) {
     upBtn.disabled = true;
-    reasonsRow?.setAttribute("hidden", "");
-    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "up" });
+    downBtn.disabled = true;
+    if (rating === "up") upBtn.classList.add("ec-fb-selected");
+    if (rating === "down") downBtn.classList.add("ec-fb-selected");
     if (reasonsRow) {
       reasonsRow.innerHTML = `<span class="ec-feedback-thanks">Thanks for your feedback!</span>`;
       reasonsRow.removeAttribute("hidden");
     }
+  }
+
+  chrome.runtime.sendMessage({ type: "GET_FEEDBACK", url }, (resp) => {
+    const rating = resp?.rating ?? null;
+    if (rating) lockFeedback(rating);
+  });
+
+  upBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "up" });
+    lockFeedback("up");
   });
 
   downBtn.addEventListener("click", () => {
-    const wasSelected = downBtn.classList.contains("ec-fb-selected");
-    downBtn.classList.toggle("ec-fb-selected", !wasSelected);
-    upBtn.classList.remove("ec-fb-selected");
-    if (!wasSelected) {
-      reasonsRow?.removeAttribute("hidden");
-    } else {
-      reasonsRow?.setAttribute("hidden", "");
-      shadow.querySelectorAll(".ec-reason-chip").forEach(c => c.classList.remove("ec-chip-selected"));
-    }
-    chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: wasSelected ? null : "down" });
+    reasonsRow?.removeAttribute("hidden");
+    downBtn.classList.add("ec-fb-selected");
   });
 
   shadow.querySelectorAll(".ec-reason-chip").forEach(chip => {
     chip.addEventListener("click", () => {
       chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down", reason: chip.dataset.reason });
-      // Lock the whole feedback row — no more clicks allowed
-      upBtn.disabled = true;
-      downBtn.disabled = true;
-      upBtn.classList.remove("ec-fb-selected");
-      downBtn.classList.remove("ec-fb-selected");
-      if (reasonsRow) {
-        reasonsRow.innerHTML = `<span class="ec-feedback-thanks">Thanks for your feedback!</span>`;
-        reasonsRow.removeAttribute("hidden");
-      }
+      lockFeedback("down");
     });
   });
 }
