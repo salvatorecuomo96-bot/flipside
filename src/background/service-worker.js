@@ -10,7 +10,7 @@
 // confidence ≥ THRESHOLD). No dot for "none" — silence is the honest default.
 
 import { classify, synthesize } from "../lib/api-client.js";
-import { fetchSources, rankSources } from "../lib/sources.js";
+import { fetchSources, rankSources, geoMismatch } from "../lib/sources.js";
 import { generateCitationToken } from "../lib/evidence-id.js";
 import { buildCitationMap, validateShown, dedupByUrl } from "../lib/citation-resolver.js";
 import { applyInlineCitations } from "../lib/inline-citations.js";
@@ -285,9 +285,15 @@ async function handleAnalyze(payload, onStage = null) {
       return await saveAndReturn(cacheKey, payload.url, buildNoneData("no_sources_returned", cls, null));
     }
 
+    // Ranked + geography-filtered pool for "Further reading": most on-topic first,
+    // and foreign-only sources hard-dropped so a geo-specific article (e.g. an
+    // Australian story) never lists irrelevant-country items as relevant reading.
+    const furtherPool = rankSources(all, cls.research_query || payload.title, all.length, cls.claim_type, cls.required_geography)
+      .filter(s => !geoMismatch(s, cls.required_geography));
+
     const usable = rankSources(all.filter(s => s.usable), cls.research_query || payload.title, MAX_TOTAL_USABLE, cls.claim_type, cls.required_geography);
     if (usable.length === 0) {
-      return await saveAndReturn(cacheKey, payload.url, buildNoneData("no_usable_evidence", cls, all));
+      return await saveAndReturn(cacheKey, payload.url, buildNoneData("no_usable_evidence", cls, furtherPool));
     }
 
     // Assign stable citation tokens — collision-checked across the prompt's source set.
@@ -307,7 +313,7 @@ async function handleAnalyze(payload, onStage = null) {
       bypassCache: payload.bypassNoneCache === true,
     });
     if (synth.result_type === "none") {
-      return await saveAndReturn(cacheKey, payload.url, buildNoneData(synthesisSilenceReason(synth.reason, cls), cls, all));
+      return await saveAndReturn(cacheKey, payload.url, buildNoneData(synthesisSilenceReason(synth.reason, cls), cls, furtherPool));
     }
 
     // VALIDATE provenance — keep only cited sources whose quote is really present.
@@ -332,7 +338,7 @@ async function handleAnalyze(payload, onStage = null) {
         // something but all cited sources were wrong-kind. evidence_too_weak is
         // the most accurate public code — the model may have found something,
         // but the output failed the code-level provenance checks.
-        return await saveAndReturn(cacheKey, payload.url, buildNoneData("evidence_too_weak", cls, all));
+        return await saveAndReturn(cacheKey, payload.url, buildNoneData("evidence_too_weak", cls, furtherPool));
       }
       const usedUrls = new Set([...empShown, ...ctxShown].map((s) => s.url));
       return await saveAndReturn(cacheKey, payload.url, {
@@ -342,13 +348,13 @@ async function handleAnalyze(payload, onStage = null) {
         core_claims: panelClaims(synth.core_claims, cls),
         empirical_counter: { summary: empSummary, confidence: calibrateConfidence(synth.empirical_counter.confidence, empShown), sources: empShown.map(pickFields) },
         additional_context: { summary: ctxSummary, sources: ctxShown.map(pickFields) },
-        furtherReading: trimSources(all.filter((s) => !usedUrls.has(s.url)), 4),
+        furtherReading: trimSources(furtherPool.filter((s) => !usedUrls.has(s.url)), 4),
       });
     }
 
     const shown = validateShown(synth.used_sources, byCitationId);
     if (shown.length === 0) {
-      return await saveAndReturn(cacheKey, payload.url, buildNoneData("evidence_too_weak", cls, all));
+      return await saveAndReturn(cacheKey, payload.url, buildNoneData("evidence_too_weak", cls, furtherPool));
     }
     const shownUrls = new Set(shown.map((s) => s.url));
     const data = {
@@ -359,7 +365,7 @@ async function handleAnalyze(payload, onStage = null) {
       core_claims: panelClaims(synth.core_claims, cls),
       confidence: calibrateConfidence(synth.confidence, shown),
       sources: shown.map(pickFields),
-      furtherReading: trimSources(all.filter((s) => !shownUrls.has(s.url)), 4),
+      furtherReading: trimSources(furtherPool.filter((s) => !shownUrls.has(s.url)), 4),
     };
     return await saveAndReturn(cacheKey, payload.url, data);
   } catch (err) {

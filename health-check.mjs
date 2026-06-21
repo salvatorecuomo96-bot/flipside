@@ -99,7 +99,7 @@ for (const f of coreFiles) {
 // ── 3. TESTS ────────────────────────────────────────────────────────────────────
 section("3. TESTS — do the unit tests pass?");
 
-const testFiles = ["test/provenance.test.mjs", "test/prompt-sync.test.mjs", "test/inline-citations.test.mjs"];
+const testFiles = ["test/provenance.test.mjs", "test/prompt-sync.test.mjs", "test/inline-citations.test.mjs", "test/geo-mismatch.test.mjs"];
 for (const t of testFiles) {
   if (!existsSync(t)) { line(false, `${t} — MISSING`); fail("test:" + t); continue; }
   const r = run(`node --test "${t}"`);
@@ -131,6 +131,8 @@ const featureChecks = [
   ["Inline citations module", "src/lib/inline-citations.js", ["applyInlineCitations"]],
   ["Inline citations wired in worker", "src/background/service-worker.js", ["applyInlineCitations"]],
   ["Inline citation markers in panel", "src/content/ui/panel.js", ["renderSummaryWithCites", "ec-cite"]],
+  ["Geo filter on further reading", "src/lib/sources.js", ["export function geoMismatch"]],
+  ["Geo-filtered further-reading pool", "src/background/service-worker.js", ["furtherPool", "geoMismatch"]],
 ];
 for (const [label, file, markers] of featureChecks) {
   if (!existsSync(file)) { line(false, `${label} — ${file} MISSING`); fail("feat:" + label); continue; }

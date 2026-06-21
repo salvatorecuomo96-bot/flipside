@@ -216,6 +216,22 @@ function geoPenalty(source, requiredCodes) {
   return P_GEO;                                                    // names ONLY foreign countries — sink it
 }
 
+// Hard boolean version of the geo gate, for "Further reading" where the ranking
+// penalty isn't enough — a foreign-only source must never be listed as relevant
+// reading for a geo-specific article (e.g. Mexico/Zimbabwe items on an AU story).
+export function geoMismatch(source, requiredGeography) {
+  const codes = new Set();
+  for (const g of (requiredGeography || [])) {
+    const c = GEO_ALIASES[String(g).toLowerCase().trim()];
+    if (c) codes.add(c);
+  }
+  if (!codes.size) return false;                                   // claim is geo-agnostic — keep all
+  const mentioned = detectGeos((source.title || "") + " " + (source.evidence_text || ""));
+  if (!mentioned.size) return false;                              // names no country — keep
+  for (const c of mentioned) if (codes.has(c)) return false;     // names a required country — keep
+  return true;                                                    // names ONLY foreign countries — drop
+}
+
 const KIND_PRIOR = { academic: 1.0, government: 0.85, legal: 0.85, preprint: 0.6, reference: 0.4, news: 0.2 };
 
 const STOPWORDS = new Set(["a","an","the","and","or","of","to","in","for","on","is","with",
