@@ -193,13 +193,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Runs before classification. Detects paywalled or truncated pages that lack
 // enough text for meaningful analysis. Returns { ok: true } or
 // { ok: false, reason, paywall_detected }.
-const PAYWALL_RE = /subscribe\s+to\s+read|subscription\s+required|sign\s+in\s+to\s+(read|continue)|unlock\s+this\s+article|premium\s+(content|article)|members?\s+only|already\s+a\s+subscriber|continue\s+reading\s+(with|below|for)|read\s+the\s+full\s+(story|article)|get\s+full\s+access/i;
+// Phrases that only appear as real paywall gates — checked against first 800 chars
+// only, so ad-break labels like "Continue reading below" (Daily Mail) don't fire.
+const PAYWALL_RE = /subscribe\s+to\s+read|subscription\s+required|sign\s+in\s+to\s+(read|continue)|unlock\s+this\s+article|premium\s+(content|article)|members?\s+only|already\s+a\s+subscriber|read\s+the\s+full\s+(story|article)|get\s+full\s+access/i;
 
 function checkExtractionCompleteness(text, paywallDetected) {
   const t = (text || "").trim();
   const wordCount = t.split(/\s+/).filter(Boolean).length;
   if (wordCount < 80) return { ok: false, reason: "too_short" };
-  if (paywallDetected || (wordCount < 350 && PAYWALL_RE.test(t))) {
+  if (paywallDetected || (wordCount < 350 && PAYWALL_RE.test(t.slice(0, 800)))) {
     return { ok: false, reason: "paywall_detected", paywall_detected: true };
   }
   return { ok: true };
