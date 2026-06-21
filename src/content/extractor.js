@@ -57,7 +57,10 @@ export function extractMainContent(doc) {
     }
   }
 
-  const text = normalizeText(best.innerText || best.textContent || "");
+  // Prefer paragraph-only text to avoid bylines, share counts, and social widgets
+  // that appear as raw text nodes in the container (e.g. Daily Mail's articleWide).
+  let text = collectParagraphText(best);
+  if (text.length < 200) text = normalizeText(best.innerText || best.textContent || "");
   // Require a minimum score so nav-heavy homepages don't pass as articles.
   if (bestScore < 20 || text.length < 200) return { title, text: "" };
   return { title, text };
