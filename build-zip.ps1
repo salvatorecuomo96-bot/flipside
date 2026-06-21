@@ -3,8 +3,20 @@ $src = $PSScriptRoot
 $dist = Join-Path $src "dist"
 if (-not (Test-Path $dist)) { New-Item -ItemType Directory -Path $dist | Out-Null }
 
+# Archive older zips — move any existing zip that doesn't match current version
+# into dist/archive/ so dist/ always shows only the newest build.
+$archive = Join-Path $dist "archive"
+if (-not (Test-Path $archive)) { New-Item -ItemType Directory -Path $archive | Out-Null }
+
 $manifestContent = Get-Content (Join-Path $src "manifest.json") -Raw | ConvertFrom-Json
 $version = $manifestContent.version
+
+Get-ChildItem -Path $dist -Filter "*.zip" | Where-Object {
+  $_.Name -notmatch "v$([regex]::Escape($version))-"
+} | ForEach-Object {
+  Move-Item -Path $_.FullName -Destination (Join-Path $archive $_.Name) -Force
+  Write-Host "Archived: $($_.Name)"
+}
 
 $outChrome = Join-Path $dist "FlipSide-v$version-chrome.zip"
 $outFirefox = Join-Path $dist "FlipSide-v$version-firefox.zip"
