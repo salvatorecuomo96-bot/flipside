@@ -69,6 +69,8 @@ function compare(actual, expected, field) {
   return actual[field] === expected[field] ? "PASS" : "FAIL";
 }
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 function pad(str, n) { return String(str ?? "").slice(0, n).padEnd(n); }
 
 const results = [];
@@ -95,6 +97,8 @@ for (const entry of corpus) {
     continue;
   }
 
+  await sleep(1500); // avoid rate-limiting the worker
+
   let actual, fetchError;
   try {
     const { title, text } = await fetchArticle(entry.url);
@@ -110,10 +114,12 @@ for (const entry of corpus) {
     continue;
   }
 
+  const notAnalyzable = actual.analyzable === false;
   const checks = {
     analyzable: compare(actual, entry.expected, "analyzable"),
-    claim_holder: compare(actual, entry.expected, "claim_holder"),
-    article_stance: compare(actual, entry.expected, "article_stance"),
+    // skip attribution checks for non-analyzable articles — classifier returns "unclear" for those by design
+    claim_holder: notAnalyzable ? null : compare(actual, entry.expected, "claim_holder"),
+    article_stance: notAnalyzable ? null : compare(actual, entry.expected, "article_stance"),
   };
 
   const overallPass = Object.values(checks).filter(Boolean).every(v => v === "PASS");
