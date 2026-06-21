@@ -150,10 +150,13 @@ function looseJson(content) {
   return null;
 }
 
+const CLAIM_HOLDERS = new Set(["author", "quoted_source", "multiple_sources", "unclear"]);
+const ARTICLE_STANCES = new Set(["endorses", "reports", "contrasts", "unclear"]);
+
 // Throws on a malformed / structurally-invalid classification so the pipeline
 // surfaces a technical error (retry state) instead of a misleading silence.
 // The required structural field is `analyzable` (must be a real boolean); every
-// other field is optional and safe-defaulted.
+// other field is optional and safe-defaulted for older proxy responses.
 export function parseClassification(content) {
   const p = looseJson(content);
   if (!p || typeof p !== "object" || typeof p.analyzable !== "boolean") {
@@ -172,6 +175,9 @@ export function parseClassification(content) {
     claim_strength: typeof p.claim_strength === "number" ? Math.max(0, Math.min(1, p.claim_strength)) : 0.5,
     claim_type: ["normative", "mixed"].includes(p.claim_type) ? p.claim_type : "empirical",
     required_geography: Array.isArray(p.required_geography) ? p.required_geography.filter(g => typeof g === "string") : [],
+    claim_holder: CLAIM_HOLDERS.has(p.claim_holder) ? p.claim_holder : "author",
+    article_stance: ARTICLE_STANCES.has(p.article_stance) ? p.article_stance : "endorses",
+    attribution: typeof p.attribution === "string" ? p.attribution.trim().slice(0, 160) : "",
   };
 }
 

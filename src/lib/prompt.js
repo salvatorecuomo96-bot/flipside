@@ -22,8 +22,22 @@ A MEANINGFUL CLAIM (analyzable) includes: political, economic, scientific, publi
 
 NOT analyzable (return analyzable=false): celebrity/gossip, lifestyle, recipes, travel, human-interest, entertainment without substantive claims, personal essays, how-to/listicles, pure event reports with nothing contestable.
 
+ATTRIBUTION RULES:
+• Never remove attribution. If the load-bearing statement is made by a quoted person, named group, anonymous source, expert, politician, company, agency, or other reported source, the core_claim MUST preserve who made it.
+• Preserve who made allegations, warnings, forecasts, accusations, criticisms, defences, and opinions. Do not convert "X alleges/warns/predicts/argues Y" into plain "Y".
+• A headline alone does not prove journalist endorsement. Repetition or prominence of a quote does not prove endorsement.
+• When an article presents meaningful competing positions without adopting one, treat it as a reported dispute.
+• Opinion and analysis articles may still contain quoted claims; preserve attribution for quoted claims inside them.
+• Only mark a claim as authorial when the article clearly adopts it as its own thesis.
+
+ANALYZABILITY WITH ATTRIBUTION:
+• A clear authorial thesis can be analyzed normally.
+• A quoted person's claim may be analyzed, but the core_claim and any later panel claim must clearly identify that person or group as the claim holder.
+• A neutral news article presenting competing positions should normally return analyzable=false; that becomes the existing straight_reporting silence.
+• Do not make all news articles non-analyzable. Specific attributed allegations, warnings, forecasts, or expert claims can still be analyzable.
+
 Determine:
-1. core_claim — the single most important takeaway a reader leaves with. One sentence.
+1. core_claim — the single most important takeaway a reader leaves with. One sentence. Preserve attribution in the sentence whenever the claim is not clearly the journalist's own thesis.
 2. article_type — "news" | "opinion" | "analysis" | "other".
 3. topic — ONE of: health, science, law, finance, government, policy, politics, technology, economics, environment, or "" if none fit. (Drives which evidence databases we search.) Tiebreaker: if an article discusses fiscal policy, budgets, tax, spending, or economic reform — even if politically framed — prefer "economics" or "finance" over "politics". The evidence quality for those topics is significantly higher.
 4. secondary_topic — a SECOND topic from the same list ONLY if the claim genuinely spans two domains where evidence from the second would materially help (e.g. a carbon-tax article is economics + environment; a vaccine-mandate article is health + law). Otherwise "". Must differ from topic. Do not pad — most articles have just one topic.
@@ -37,9 +51,32 @@ Determine:
    GUARDRAIL — be strict; the model tends to over-tag "mixed". A claim that something "is evil", "is the antichrist", "is immoral", "is a sin", or "is a moral good" is NORMATIVE, even though the thing has real-world effects. To tag "mixed" the ARTICLE must EXPLICITLY state a specific, measurable, on-topic causal premise as its justification (e.g. "…because it prevents poverty", "…because it lowers wages"). An inferred "it probably causes harm/good" does NOT count. Examples: "Christian nationalism is the antichrist / a systemic evil" = normative (no explicit measurable premise). "Rent control is a right because it prevents poverty" = mixed. If unsure, choose "normative".
 
 9. required_geography — array of full country names (e.g. ["United States"]) if the core claim is implicitly tied to a specific country or countries (e.g. US domestic politics, UK policy). Empty array [] if the claim is globally applicable or theoretical. Use full names only — not abbreviations or codes. Examples: a Trump tax policy article → ["United States"]. A WHO pandemic study → [].
+10. claim_holder — one of:
+   • "author" — the article clearly adopts the claim as its own thesis.
+   • "quoted_source" — the claim is made by one quoted/reported person, group, institution, anonymous source set, or document.
+   • "multiple_sources" — the article reports a dispute or several meaningful positions without adopting one.
+   • "unclear" — attribution cannot be determined.
+11. article_stance — one of:
+   • "endorses" — the article clearly adopts the claim.
+   • "reports" — the article reports someone else's claim without adopting it.
+   • "contrasts" — the article sets competing claims against each other or rebuts a quoted claim.
+   • "unclear" — stance cannot be determined.
+12. attribution — short human-readable attribution, or "" for authorial/unclear claims. Examples: "Senior party figures", "the health minister", "anonymous officials", "two campaign advisers", "critics of the plan".
+
+ATTRIBUTION EXAMPLES:
+• Journalist clearly endorses a thesis → claim_holder:"author", article_stance:"endorses", attribution:"", core_claim:"The policy will increase housing supply."
+• Journalist reports one politician's allegation → claim_holder:"quoted_source", article_stance:"reports", attribution:"the opposition leader", core_claim:"The opposition leader alleges that the contracts were improperly awarded."
+• Journalist reports one expert prediction → claim_holder:"quoted_source", article_stance:"reports", attribution:"a central bank economist", core_claim:"A central bank economist predicts that inflation will fall next year."
+• Two quoted sides disagree → claim_holder:"multiple_sources", article_stance:"contrasts", attribution:"supporters and opponents of the bill", analyzable:false unless the article adopts one side.
+• Analysis article weighs evidence and reaches a conclusion → claim_holder:"author", article_stance:"endorses", attribution:"", core_claim:"The evidence indicates that the merger will reduce competition."
+• Headline is stronger than the body → do not treat the headline as endorsement if the body only reports a source's claim.
+• Repeated attributed statement remains attributed → repeated quotes do not become the article's own thesis.
+• Anonymous sources make a warning → claim_holder:"quoted_source", article_stance:"reports", attribution:"anonymous officials", core_claim:"Anonymous officials warn that the ceasefire may collapse."
+• Article quotes a criticism and rebuts it → claim_holder:"author", article_stance:"contrasts", attribution:"", core_claim:"The article argues that the quoted criticism is not supported by the evidence."
+• Neutral reported dispute becomes straight_reporting → analyzable:false when meaningful competing positions are reported and the article does not adopt one.
 
 OUTPUT ONLY this JSON, nothing else:
-{"analyzable":<true|false>,"article_type":"<...>","core_claim":"<... or empty>","topic":"<... or empty>","secondary_topic":"<... or empty>","research_query":"<... or empty>","expected_response_type":"<...>","claim_strength":<0.0-1.0>,"claim_type":"<empirical|normative|mixed>","required_geography":[<... or empty array>]}`;
+{"analyzable":<true|false>,"article_type":"<...>","core_claim":"<... or empty>","topic":"<... or empty>","secondary_topic":"<... or empty>","research_query":"<... or empty>","expected_response_type":"<...>","claim_strength":<0.0-1.0>,"claim_type":"<empirical|normative|mixed>","required_geography":[<... or empty array>],"claim_holder":"<author|quoted_source|multiple_sources|unclear>","article_stance":"<endorses|reports|contrasts|unclear>","attribution":"<short source label or empty>"}`;
 
 /**
  * @param {{title:string,text:string,url:string}} article
