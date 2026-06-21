@@ -311,9 +311,14 @@ function renderSourcesBlock(sources) {
 // escaped first; only our own integer-indexed <sup> markup is then injected.
 function renderSummaryWithCites(summary) {
   if (typeof summary !== "string" || !summary) return "";
-  return escapeHtml(summary).replace(/\[(\d+)\]/g, (_m, n) =>
-    `<sup class="ec-cite" data-cite="${n}" role="button" tabindex="0" title="Jump to source ${n}">${n}</sup>`
-  );
+  return escapeHtml(summary)
+    // [N] → clickable superscript (service worker already mapped tokens → indices)
+    .replace(/\[(\d+)\]/g, (_m, n) =>
+      `<sup class="ec-cite" data-cite="${n}" role="button" tabindex="0" title="Jump to source ${n}">${n}</sup>`)
+    // Safety net: strip any raw citation token that slips through — e.g. a result
+    // cached before this feature, or a free-proxy response from a worker not yet
+    // redeployed. Users must never see internal codes like [3BYEYNPHW7].
+    .replace(/ ?\[[A-Za-z0-9_]{6,}\]/g, "");
 }
 
 function renderFurther(further) {
