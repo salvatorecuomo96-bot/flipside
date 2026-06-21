@@ -264,7 +264,7 @@ async function handleAnalyze(payload, onStage = null) {
 
     // RETRIEVAL — real evidence
     onStage?.("Searching credible evidence…");
-    const { sources: all, diagnostics, evidenceFingerprint } = await fetchSources(cls.research_query || payload.title, cls.topic, payload.url || "", cls.secondary_topic || "");
+    const { sources: all, diagnostics, evidenceFingerprint } = await fetchSources(cls.research_query || payload.title, cls.topic, payload.url || "", cls.secondary_topic || "", payload.title || "");
     if (all.length === 0) {
       // If every evidence-bearing feed failed it's likely an API outage, not a
       // genuine topic gap. Throw so the pipeline surfaces a retry error rather

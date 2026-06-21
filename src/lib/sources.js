@@ -34,16 +34,21 @@ const CAP = {
  *   sources — each: {id,title,url,publisher,kind,evidence_text,citationCount,year,usable}
  *   diagnostics — {attempted, succeeded, failed, evidenceAttempted, evidenceFailed}
  */
-export async function fetchSources(query, topic = "", articleUrl = "", secondaryTopic = "") {
+export async function fetchSources(query, topic = "", articleUrl = "", secondaryTopic = "", articleTitle = "") {
   const q = (query || "").trim();
   if (!q) return { sources: [], diagnostics: { attempted: 0, succeeded: 0, failed: 0, evidenceAttempted: 0, evidenceFailed: 0 } };
   const articleDomain = extractDomain(articleUrl);
+  // Wikipedia search: use article title for entity matching when available,
+  // falling back to research_query. Title finds "Pope Leo XIV" directly;
+  // research_query alone risks matching tangentially-related articles (e.g. a
+  // "Dystopian film" for a query about "AI human dignity ethics").
+  const wikiQ = (articleTitle || "").trim() || q;
 
   const jobs = [
-    cap("openAlex",  true,  fetchOpenAlex(q),  CAP.openAlex),
-    cap("news",      false, fetchNews(q),       CAP.news),
-    cap("gdelt",     false, fetchGdelt(q),      CAP.gdelt),
-    cap("wikipedia", true,  fetchWikipedia(q),  CAP.wikipedia),
+    cap("openAlex",  true,  fetchOpenAlex(q),          CAP.openAlex),
+    cap("news",      false, fetchNews(q),               CAP.news),
+    cap("gdelt",     false, fetchGdelt(q),              CAP.gdelt),
+    cap("wikipedia", true,  fetchWikipedia(wikiQ, q),   CAP.wikipedia),
   ];
   // Fire each topic's specialist feeds. A feed shared by both topics runs once.
   const fired = new Set();
@@ -470,13 +475,25 @@ async function fetchGdelt(q) {
 // --- Wikipedia: reference WITH summary extract (reliable context fallback) ---
 // Top-3 pages: for normative/theological claims the encyclopedic concept entry IS
 // the right evidence, so we pull a few candidates and let the ranker pick. (Notch 1)
-async function fetchWikipedia(q) {
-  const url = "https://en.wikipedia.org/w/rest.php/v1/search/page?q=" + encodeURIComponent(q) + "&limit=3";
-  const data = await getJson(url);
-  const pages = (data?.pages || []).filter(x => x?.key && x?.title).slice(0, 3);
+// titleQ (article title) is used for the primary search for better entity matching;
+// fallbackQ (research_query) is tried if the title search returns no usable results.
+// Any page whose extract has zero token overlap with fallbackQ is dropped — this
+// prevents totally unrelated Wikipedia articles (e.g. a dystopian film that mentions
+// AI) from making it into the evidence pool just because KIND_PRIOR beats news.
+async function fetchWikipedia(titleQ, fallbackQ = "") {
+  const fetchPages = async (q) => {
+    const url = "https://en.wikipedia.org/w/rest.php/v1/search/page?q=" + encodeURIComponent(q) + "&limit=3";
+    const data = await getJson(url);
+    return (data?.pages || []).filter(x => x?.key && x?.title).slice(0, 3);
+  };
+
+  let pages = await fetchPages(titleQ);
+  if (!pages.length && fallbackQ && fallbackQ !== titleQ) pages = await fetchPages(fallbackQ);
   if (!pages.length) return [];
-  return Promise.all(pages.map(async p => {
-    // Pull the real summary paragraph so Wikipedia is usable evidence, not just a link.
+
+  const qTokens = new Set(tokenize(fallbackQ || titleQ));
+
+  const results = await Promise.all(pages.map(async p => {
     let extract = (p.description || "").trim();
     try {
       const sum = await getJson("https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(p.key));
@@ -489,6 +506,17 @@ async function fetchWikipedia(q) {
       evidence_text: extract,
     };
   }));
+
+  // Drop pages with zero query-term overlap — catches completely off-topic results
+  // that slip through Wikipedia's search when the query is multi-concept.
+  if (qTokens.size > 0) {
+    return results.filter(r => {
+      const docTokens = new Set(tokenize(r.title + " " + r.evidence_text));
+      for (const t of qTokens) if (docTokens.has(t)) return true;
+      return false;
+    });
+  }
+  return results;
 }
 
 // --- ClinicalTrials.gov: registered studies WITH summaries ------------------
