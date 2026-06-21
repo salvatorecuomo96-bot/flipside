@@ -163,7 +163,7 @@ function renderResultHtml(data) {
   const labelClass = isCounter ? "ec-label-counter" : "ec-label-context";
 
   return `
-    ${renderClaims(data.core_claims)}
+    ${renderClaims(data.core_claims, data)}
     <section class="ec-section">
       <p class="ec-label ${labelClass}">${label} ${confChip(data.confidence)}</p>
       ${data.headline ? `<p class="ec-headline">${escapeHtml(data.headline)}</p>` : ""}
@@ -194,7 +194,7 @@ function renderMixedHtml(data) {
        </section>`
     : "";
   return `
-    ${renderClaims(data.core_claims)}
+    ${renderClaims(data.core_claims, data)}
     ${data.headline ? `<p class="ec-headline">${escapeHtml(data.headline)}</p>` : ""}
     ${empHtml}
     ${ctxHtml}
@@ -270,13 +270,23 @@ function renderNoneHtml(data) {
     ${renderFeedbackHtml()}`;
 }
 
-function renderClaims(coreClaims) {
+function renderClaims(coreClaims, data = {}) {
   const claims = Array.isArray(coreClaims) ? coreClaims : [];
-  if (!claims.length) return "";
+  const attribution = renderClaimHolder(data);
+  if (!claims.length && !attribution) return "";
   return `<section class="ec-section">
        <p class="ec-label">Core claims</p>
-       <ul class="ec-claims">${claims.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>
+       ${attribution}
+       ${claims.length ? `<ul class="ec-claims">${claims.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>` : ""}
      </section>`;
+}
+
+function renderClaimHolder(data) {
+  const holder = data?.claim_holder;
+  const attribution = typeof data?.attribution === "string" ? data.attribution.trim() : "";
+  if (!attribution || holder === "author") return "";
+  const label = holder === "multiple_sources" ? "Reported dispute" : "Claim holder";
+  return `<p class="ec-claim-holder"><span>${label}</span>${escapeHtml(attribution)}</p>`;
 }
 
 function confChip(confidence) {
@@ -544,6 +554,20 @@ const TEMPLATE = `
     }
 
     /* ── Claims ── */
+    .ec-claim-holder {
+      margin: 0 0 6px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--ec-text);
+    }
+    .ec-claim-holder span {
+      margin-right: 6px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.7px;
+      text-transform: uppercase;
+      color: var(--ec-muted);
+    }
     .ec-claims {
       list-style: none;
       padding: 0; margin: 0;

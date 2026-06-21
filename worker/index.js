@@ -33,8 +33,22 @@ A MEANINGFUL CLAIM (analyzable) includes: political, economic, scientific, publi
 
 NOT analyzable (return analyzable=false): celebrity/gossip, lifestyle, recipes, travel, human-interest, entertainment without substantive claims, personal essays, how-to/listicles, pure event reports with nothing contestable.
 
+ATTRIBUTION RULES:
+• Never remove attribution. If the load-bearing statement is made by a quoted person, named group, anonymous source, expert, politician, company, agency, or other reported source, the core_claim MUST preserve who made it.
+• Preserve who made allegations, warnings, forecasts, accusations, criticisms, defences, and opinions. Do not convert "X alleges/warns/predicts/argues Y" into plain "Y".
+• A headline alone does not prove journalist endorsement. Repetition or prominence of a quote does not prove endorsement.
+• When an article presents meaningful competing positions without adopting one, treat it as a reported dispute.
+• Opinion and analysis articles may still contain quoted claims; preserve attribution for quoted claims inside them.
+• Only mark a claim as authorial when the article clearly adopts it as its own thesis.
+
+ANALYZABILITY WITH ATTRIBUTION:
+• A clear authorial thesis can be analyzed normally.
+• A quoted person's claim may be analyzed, but the core_claim and any later panel claim must clearly identify that person or group as the claim holder.
+• A neutral news article presenting competing positions should normally return analyzable=false; that becomes the existing straight_reporting silence.
+• Do not make all news articles non-analyzable. Specific attributed allegations, warnings, forecasts, or expert claims can still be analyzable.
+
 Determine:
-1. core_claim — the single most important takeaway a reader leaves with. One sentence.
+1. core_claim — the single most important takeaway a reader leaves with. One sentence. Preserve attribution in the sentence whenever the claim is not clearly the journalist's own thesis.
 2. article_type — "news" | "opinion" | "analysis" | "other".
 3. topic — ONE of: health, science, law, finance, government, policy, politics, technology, economics, environment, or "" if none fit. (Drives which evidence databases we search.) Tiebreaker: if an article discusses fiscal policy, budgets, tax, spending, or economic reform — even if politically framed — prefer "economics" or "finance" over "politics". The evidence quality for those topics is significantly higher.
 4. secondary_topic — a SECOND topic from the same list ONLY if the claim genuinely spans two domains where evidence from the second would materially help (e.g. a carbon-tax article is economics + environment; a vaccine-mandate article is health + law). Otherwise "". Must differ from topic. Do not pad — most articles have just one topic.
@@ -48,9 +62,32 @@ Determine:
    GUARDRAIL — be strict; the model tends to over-tag "mixed". A claim that something "is evil", "is the antichrist", "is immoral", "is a sin", or "is a moral good" is NORMATIVE, even though the thing has real-world effects. To tag "mixed" the ARTICLE must EXPLICITLY state a specific, measurable, on-topic causal premise as its justification (e.g. "…because it prevents poverty", "…because it lowers wages"). An inferred "it probably causes harm/good" does NOT count. Examples: "Christian nationalism is the antichrist / a systemic evil" = normative (no explicit measurable premise). "Rent control is a right because it prevents poverty" = mixed. If unsure, choose "normative".
 
 9. required_geography — array of full country names (e.g. ["United States"]) if the core claim is implicitly tied to a specific country or countries (e.g. US domestic politics, UK policy). Empty array [] if the claim is globally applicable or theoretical. Use full names only — not abbreviations or codes. Examples: a Trump tax policy article → ["United States"]. A WHO pandemic study → [].
+10. claim_holder — one of:
+   • "author" — the article clearly adopts the claim as its own thesis.
+   • "quoted_source" — the claim is made by one quoted/reported person, group, institution, anonymous source set, or document.
+   • "multiple_sources" — the article reports a dispute or several meaningful positions without adopting one.
+   • "unclear" — attribution cannot be determined.
+11. article_stance — one of:
+   • "endorses" — the article clearly adopts the claim.
+   • "reports" — the article reports someone else's claim without adopting it.
+   • "contrasts" — the article sets competing claims against each other or rebuts a quoted claim.
+   • "unclear" — stance cannot be determined.
+12. attribution — short human-readable attribution, or "" for authorial/unclear claims. Examples: "Senior party figures", "the health minister", "anonymous officials", "two campaign advisers", "critics of the plan".
+
+ATTRIBUTION EXAMPLES:
+• Journalist clearly endorses a thesis → claim_holder:"author", article_stance:"endorses", attribution:"", core_claim:"The policy will increase housing supply."
+• Journalist reports one politician's allegation → claim_holder:"quoted_source", article_stance:"reports", attribution:"the opposition leader", core_claim:"The opposition leader alleges that the contracts were improperly awarded."
+• Journalist reports one expert prediction → claim_holder:"quoted_source", article_stance:"reports", attribution:"a central bank economist", core_claim:"A central bank economist predicts that inflation will fall next year."
+• Two quoted sides disagree → claim_holder:"multiple_sources", article_stance:"contrasts", attribution:"supporters and opponents of the bill", analyzable:false unless the article adopts one side.
+• Analysis article weighs evidence and reaches a conclusion → claim_holder:"author", article_stance:"endorses", attribution:"", core_claim:"The evidence indicates that the merger will reduce competition."
+• Headline is stronger than the body → do not treat the headline as endorsement if the body only reports a source's claim.
+• Repeated attributed statement remains attributed → repeated quotes do not become the article's own thesis.
+• Anonymous sources make a warning → claim_holder:"quoted_source", article_stance:"reports", attribution:"anonymous officials", core_claim:"Anonymous officials warn that the ceasefire may collapse."
+• Article quotes a criticism and rebuts it → claim_holder:"author", article_stance:"contrasts", attribution:"", core_claim:"The article argues that the quoted criticism is not supported by the evidence."
+• Neutral reported dispute becomes straight_reporting → analyzable:false when meaningful competing positions are reported and the article does not adopt one.
 
 OUTPUT ONLY this JSON, nothing else:
-{"analyzable":<true|false>,"article_type":"<...>","core_claim":"<... or empty>","topic":"<... or empty>","secondary_topic":"<... or empty>","research_query":"<... or empty>","expected_response_type":"<...>","claim_strength":<0.0-1.0>,"claim_type":"<empirical|normative|mixed>","required_geography":[<... or empty array>]}`;
+{"analyzable":<true|false>,"article_type":"<...>","core_claim":"<... or empty>","topic":"<... or empty>","secondary_topic":"<... or empty>","research_query":"<... or empty>","expected_response_type":"<...>","claim_strength":<0.0-1.0>,"claim_type":"<empirical|normative|mixed>","required_geography":[<... or empty array>],"claim_holder":"<author|quoted_source|multiple_sources|unclear>","article_stance":"<endorses|reports|contrasts|unclear>","attribution":"<short source label or empty>"}`;
 
 // ─── CALL 2 prompt (mirror of src/lib/prompt.js SYNTHESIS_PROMPT) ───
 const SYNTHESIS_PROMPT = `You are FlipSide's research engine. You are given an article, its core claim, and REAL EVIDENCE fetched from credible databases. Your job is to produce the strongest credible challenge to what this article leads a reader to conclude — or to return "none" if the evidence cannot support one.
@@ -61,6 +98,14 @@ Returning "none" is preferable to a weak or generic answer. Success is measured 
 Step 1 — What specific conclusion does this article lead a reader to? Not the topic. The implied takeaway.
 Step 2 — What would a well-informed, intellectually honest person who disputes THAT conclusion argue, using only the evidence provided?
 Your summary must be the answer to Step 2. If it does not directly engage the article's specific implied conclusion, it has failed.
+
+═══ ATTRIBUTION TARGET ═══
+Read CLAIM_HOLDER, ARTICLE_STANCE, ATTRIBUTION, and CHALLENGE_TARGET before writing.
+• CHALLENGE_TARGET=journalist — challenge the article's own adopted thesis.
+• CHALLENGE_TARGET=quoted_speaker — challenge the attributed person's or group's claim. Name that speaker/group in the headline, summary, and core_claims when needed. Do NOT write "the article argues" or "the article claims" when the article merely reports that source's view.
+• CHALLENGE_TARGET=reported_dispute — the article reports competing positions. Do not invent a single article thesis. If the article does not adopt a side and the evidence cannot materially clarify the dispute, return "none".
+• Opinion and analysis articles can still contain quoted claims. If CLAIM_HOLDER=quoted_source, preserve the quoted claim holder even inside opinion/analysis.
+Every output core_claims item must preserve attribution when the claim holder is not the journalist.
 
 ═══ ANTI-GENERIC RULE (hard filter) ═══
 If your summary could be copy-pasted onto a different article about the same general topic without changing a word, return "none" instead.
@@ -152,7 +197,16 @@ function buildClassifyMessages({ title, text, url }) {
   return [{ role: "system", content: CLASSIFY_PROMPT }, { role: "user", content: user }];
 }
 
-function buildSynthMessages({ title, text, articleType, coreClaim, claimType, evidence }) {
+function challengeTargetLabel(claimHolder, articleStance) {
+  if (claimHolder === "author") return "journalist";
+  if (claimHolder === "quoted_source") return "quoted_speaker";
+  if (claimHolder === "multiple_sources") return "reported_dispute";
+  if (articleStance === "reports") return "quoted_speaker";
+  if (articleStance === "contrasts") return "reported_dispute";
+  return "unclear_claim_holder";
+}
+
+function buildSynthMessages({ title, text, articleType, coreClaim, claimType, claimHolder = "author", articleStance = "endorses", attribution = "", evidence }) {
   const list = Array.isArray(evidence) ? evidence : [];
   const evidenceBlock = list.length
     ? list.map(e => [
@@ -166,6 +220,10 @@ function buildSynthMessages({ title, text, articleType, coreClaim, claimType, ev
     `TODAY'S DATE: ${new Date().toISOString().slice(0, 10)}`,
     `ARTICLE_TYPE: ${articleType || "news"}`,
     `CLAIM_TYPE: ${claimType || "empirical"}`,
+    `CLAIM_HOLDER: ${claimHolder || "author"}`,
+    `ARTICLE_STANCE: ${articleStance || "endorses"}`,
+    `ATTRIBUTION: ${attribution || ""}`,
+    `CHALLENGE_TARGET: ${challengeTargetLabel(claimHolder, articleStance)}`,
     `CORE_CLAIM: ${coreClaim || "(none extracted)"}`,
     "",
     "ARTICLE TEXT (may be truncated):",
@@ -264,7 +322,7 @@ async function generate(env, messages) {
 // --- KV cache ----------------------------------------------------------------
 const CACHE_TTL = 6 * 60 * 60;
 const CACHE_KEY_VERSION_LEGACY = "v14"; // URL-keyed — old clients without citation_schema
-const CACHE_KEY_VERSION_STABLE = "v17"; // content-keyed — clients sending citation_schema:"stable-v1"
+const CACHE_KEY_VERSION_STABLE = "v18"; // content-keyed — clients sending citation_schema:"stable-v1"
 
 // djb2 hash over a multi-part key string
 function djb2(str) {
@@ -339,6 +397,7 @@ export default {
     const {
       stage = "classify", title = "", text = "", url = "",
       articleType = "", coreClaim = "", claimType = "empirical",
+      claim_holder = "author", article_stance = "endorses", attribution = "",
       evidence = [], rating = "",
       citation_schema = "", bypassCache = false, evidenceFingerprint = "",
     } = body;
@@ -362,7 +421,7 @@ export default {
 
     const messages = stage === "classify"
       ? buildClassifyMessages({ title, text, url })
-      : buildSynthMessages({ title, text, articleType, coreClaim, claimType, evidence });
+      : buildSynthMessages({ title, text, articleType, coreClaim, claimType, claimHolder: claim_holder, articleStance: article_stance, attribution, evidence });
 
     // KV cache — dual namespace:
     //   v14 (legacy): URL-keyed — old clients without citation_schema

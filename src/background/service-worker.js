@@ -17,6 +17,8 @@ import {
   classificationSilenceReason, synthesisSilenceReason,
   silenceShowsFurther, silenceExaminedClaim,
 } from "../lib/silence.js";
+import { ensureAnalysisCacheSchema } from "../lib/cache-schema.js";
+import { claimAttributionFields, claimWithAttribution, panelClaims } from "../lib/claim-attribution.js";
 
 const PROXY_URL = "https://epistemic-companion-proxy.salvatoreducksamurai96.workers.dev";
 const CONF_THRESHOLD = 0.7;
@@ -27,23 +29,17 @@ const COLOR_COUNTER = "#22c55e"; // green  — counter-perspective found
 const COLOR_CONTEXT = "#3b82f6"; // blue   — additional context found
 const COLOR_NEUTRAL = "#9ca3af"; // gray   — analyzable claim detected (pre-click)
 
-// --- One-time cache cleanup ----------
-// The v0.2.10 citation-token regression caused valid syntheses to collapse to
-// `evidence_too_weak`, which got cached locally. Worker KV is unaffected (it
-// holds the correct synthesis), so we only purge the poisoned local stores:
-// noneCache (articulated silences) and badgeCache (derived "none" badges).
-// API keys, BYOK choice, settings, feedback, and positive-result caches are
-// left untouched. Runs once, guarded by a stored flag.
-const CLEANUP_FLAG_KEY = "cleanup_citation_regression_v1";
-(async () => {
-  try {
-    const done = (await chrome.storage.local.get(CLEANUP_FLAG_KEY))[CLEANUP_FLAG_KEY];
-    if (done) return;
-    await chrome.storage.local.remove(["noneCache", "badgeCache"]);
-    await chrome.storage.local.set({ [CLEANUP_FLAG_KEY]: true });
-    console.log("[FlipSide] cleared poisoned noneCache + badgeCache (citation regression cleanup)");
-  } catch (e) { console.warn("[FlipSide] cache cleanup failed:", e?.message); }
-})();
+// --- Local analysis-cache schema gate ----------
+// Future result-shape changes should bump LOCAL_ANALYSIS_SCHEMA_VERSION in
+// cache-schema.js. This clears only analysis-derived caches; keys/settings and
+// feedback history are deliberately left untouched.
+const analysisCacheSchemaReady = ensureAnalysisCacheSchema(chrome.storage.local)
+  .then((cleared) => { if (cleared) console.log("[FlipSide] cleared old analysis caches for schema update"); })
+  .catch((e) => console.warn("[FlipSide] cache schema check failed:", e?.message));
+
+async function waitForAnalysisCacheSchema() {
+  await analysisCacheSchemaReady;
+}
 
 // --- Toolbar click -> toggle the panel ----------
 chrome.action.onClicked.addListener(async (tab) => {
@@ -123,6 +119,7 @@ const BADGE_CACHE_KEY = "badgeCache";
 const BADGE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 async function saveBadgeState(url, state) {
+  await waitForAnalysisCacheSchema();
   const store = (await chrome.storage.local.get(BADGE_CACHE_KEY))[BADGE_CACHE_KEY] || {};
   store[url] = { state, ts: Date.now() };
   const keys = Object.keys(store);
@@ -130,6 +127,7 @@ async function saveBadgeState(url, state) {
   await chrome.storage.local.set({ [BADGE_CACHE_KEY]: store });
 }
 async function getBadgeState(url) {
+  await waitForAnalysisCacheSchema();
   const store = (await chrome.storage.local.get(BADGE_CACHE_KEY))[BADGE_CACHE_KEY] || {};
   const entry = store[url];
   if (!entry || Date.now() - entry.ts > BADGE_TTL_MS) return null;
@@ -220,6 +218,7 @@ function calibrateConfidence(raw, validatedSources) {
 
 // --- The pipeline ----------
 async function handleAnalyze(payload, onStage = null) {
+  await waitForAnalysisCacheSchema();
   const cacheKey = hashStr((payload.url || "") + "\n" + (payload.text || ""));
 
   // Extraction completeness — checked before any model call. isPastedText skips
@@ -293,6 +292,7 @@ async function handleAnalyze(payload, onStage = null) {
     const synth = await synthesize({
       apiKey, provider, article: payload,
       articleType: cls.article_type, coreClaim: cls.core_claim, claimType: cls.claim_type,
+      claimHolder: cls.claim_holder, articleStance: cls.article_stance, attribution: cls.attribution,
       evidence: usable, evidenceFingerprint,
       bypassCache: payload.bypassNoneCache === true,
     });
@@ -327,8 +327,9 @@ async function handleAnalyze(payload, onStage = null) {
       const usedUrls = new Set([...empShown, ...ctxShown].map((s) => s.url));
       return await saveAndReturn(cacheKey, payload.url, {
         result_type: "mixed",
+        ...claimAttributionFields(cls),
         headline: synth.headline,
-        core_claims: synth.core_claims,
+        core_claims: panelClaims(synth.core_claims, cls),
         empirical_counter: { summary: empSummary, confidence: calibrateConfidence(synth.empirical_counter.confidence, empShown), sources: empShown.map(pickFields) },
         additional_context: { summary: ctxSummary, sources: ctxShown.map(pickFields) },
         furtherReading: trimSources(all.filter((s) => !usedUrls.has(s.url)), 4),
@@ -342,9 +343,10 @@ async function handleAnalyze(payload, onStage = null) {
     const shownUrls = new Set(shown.map((s) => s.url));
     const data = {
       result_type: synth.result_type,
+      ...claimAttributionFields(cls),
       headline: synth.headline,
       summary: synth.summary,
-      core_claims: synth.core_claims,
+      core_claims: panelClaims(synth.core_claims, cls),
       confidence: calibrateConfidence(synth.confidence, shown),
       sources: shown.map(pickFields),
       furtherReading: trimSources(all.filter((s) => !shownUrls.has(s.url)), 4),
@@ -359,8 +361,8 @@ async function handleAnalyze(payload, onStage = null) {
 // (from silence.js); the panel maps it to fixed copy. examined_claim and further
 // reading are attached only where the reason warrants them.
 function buildNoneData(reason, cls, allSources) {
-  const data = { result_type: "none", reason };
-  const claim = silenceExaminedClaim(reason, cls?.core_claim);
+  const data = { result_type: "none", reason, ...claimAttributionFields(cls) };
+  const claim = silenceExaminedClaim(reason, claimWithAttribution(cls?.core_claim, cls));
   if (claim) data.examined_claim = claim;
   if (silenceShowsFurther(reason) && Array.isArray(allSources) && allSources.length) {
     const fr = trimSources(allSources, 5);
@@ -458,6 +460,7 @@ async function noneCacheSet(key, data) {
 const CLASS_CACHE_KEY = "classifyCache";
 
 async function getClassification(payload) {
+  await waitForAnalysisCacheSchema();
   const key = hashStr((payload.url || "") + "\n" + (payload.text || ""));
   const store = (await chrome.storage.local.get(CLASS_CACHE_KEY))[CLASS_CACHE_KEY] || {};
   if (store[key] && Date.now() - store[key].ts < CACHE_TTL_MS) return store[key].data;
