@@ -100,9 +100,9 @@ export async function fetchSources(query, topic = "", articleUrl = "", secondary
     // has its own gate in fetchWikipedia.
     if (s.kind !== "news" && s.kind !== "reference" && qTokenSet.size > 0) {
       const docTokens = new Set(tokenize((s.title || "") + " " + (s.evidence_text || "")));
-      let hasOverlap = false;
-      for (const t of qTokenSet) { if (docTokens.has(t)) { hasOverlap = true; break; } }
-      if (!hasOverlap) continue;
+      let overlapCount = 0;
+      for (const t of qTokenSet) { if (docTokens.has(t)) overlapCount++; }
+      if (overlapCount < 2) continue;
     }
     seen.add(key);
     candidates.push(s);
