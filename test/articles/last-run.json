@@ -1,10 +1,10 @@
 {
-  "ran_at": "2026-06-21T03:29:27.426Z",
+  "ran_at": "2026-06-21T03:38:31.422Z",
   "results": [
     {
       "id": "aus-pol-001",
-      "url": "https://www.abc.net.au/news/2026-06-19/labor-housing-policy-announcement/104000000",
-      "url_verified": false,
+      "url": "https://theconversation.com/how-do-the-coalition-and-labor-plans-on-housing-differ-and-what-have-they-ignored-253337",
+      "url_verified": true,
       "category": "politics",
       "sub_category": "australian_federal",
       "description": "Labor minister announces new housing policy, claiming it will reduce rents",
@@ -16,13 +16,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Should show minister name in claims, not 'the article argues'. Counter should cite housing economics research.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "The Coalition and Labor parties' housing plans differ significantly, with the Coalition's plans being criticized for their potential inflationary and regressive effects, while Labor's plans aim to increase housing supply and affordability",
+        "topic": "economics",
+        "secondary_topic": "politics",
+        "research_query": "housing market policy australia labor coalition",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "Australia"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "aus-pol-002",
-      "url": "https://www.smh.com.au/politics/federal/opposition-leader-slams-budget-2026.html",
-      "url_verified": false,
+      "url": "https://theconversation.com/cutting-migrant-numbers-wont-help-housing-the-real-immigration-problems-not-being-tackled-this-election-250646",
+      "url_verified": true,
       "category": "politics",
       "sub_category": "australian_federal",
       "description": "Opposition leader attacks government budget, alleging it will increase cost of living",
@@ -34,13 +55,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Classic quoted_source case. Panel must not say 'the article argues the budget increases cost of living'.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "Cutting migrant numbers won't help housing – the real immigration problems are not being tackled this election",
+        "topic": "economics",
+        "secondary_topic": "politics",
+        "research_query": "immigration policy housing market economic growth",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "Australia"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "aus-pol-003",
-      "url": "https://www.theguardian.com/australia-news/2026/jun/19/greens-climate-policy-coal",
-      "url_verified": false,
+      "url": "https://www.carbonbrief.org/australia-election-2025-where-parties-stand-on-climate-change-energy-and-nature/",
+      "url_verified": true,
       "category": "politics",
       "sub_category": "australian_federal",
       "description": "Greens senator warns that coal subsidies are delaying climate action",
@@ -52,13 +94,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Should attribute to 'the Greens' or senator name, not the article. Counter should cite subsidy economics.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "The Australian Labor party and Liberal-National Coalition have differing policies on climate change, energy, and nature, with the Greens offering alternative policies to stop new coal and gas projects and end fossil fuel subsidies.",
+        "topic": "environment",
+        "secondary_topic": "politics",
+        "research_query": "Australian climate policy renewable energy fossil fuel subsidies",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "Australia"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "aus-pol-004",
-      "url": "https://www.abc.net.au/news/2026-06-20/rba-interest-rate-decision-inflation/104000001",
-      "url_verified": false,
+      "url": "https://theconversation.com/inflation-cooled-more-than-expected-in-november-but-rate-cuts-remain-unlikely-anytime-soon-272338",
+      "url_verified": true,
       "category": "politics",
       "sub_category": "australian_economy",
       "description": "RBA governor warns inflation remains persistent and further rate rises may be needed",
@@ -70,13 +133,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Expert warning — should show 'RBA governor' as claim holder. Counter should cite inflation research.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "Rate cuts remain unlikely anytime soon despite inflation cooling in Australia.",
+        "topic": "economics",
+        "secondary_topic": "",
+        "research_query": "Australia inflation November CPI 3.4% RBA cash rate 3.6% rate cuts unlikely 2026",
+        "expected_response_type": "counter_perspective",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "Australia"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "aus-pol-005",
-      "url": "https://www.smh.com.au/national/australia-immigration-levels-debate-2026.html",
-      "url_verified": false,
+      "url": "https://australiaunwrapped.com/the-debate-over-australias-immigration-cap-in-the-2025-election/",
+      "url_verified": true,
       "category": "politics",
       "sub_category": "australian_federal",
       "description": "Two parties present opposing views on immigration levels — article reports both without adopting one",
@@ -88,13 +172,32 @@
         "result_type": "none"
       },
       "notes": "Reported dispute — should return straight_reporting silence. Must not fabricate a single thesis.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": false,
+        "article_type": "news",
+        "core_claim": "",
+        "topic": "",
+        "secondary_topic": "",
+        "research_query": "",
+        "expected_response_type": "none",
+        "claim_strength": 0,
+        "claim_type": "empirical",
+        "required_geography": [],
+        "claim_holder": "unclear",
+        "article_stance": "unclear",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "us-pol-001",
-      "url": "https://www.nytimes.com/2026/06/19/us/politics/trump-tax-cuts-economy.html",
-      "url_verified": false,
+      "url": "https://theconversation.com/trumps-plans-to-extend-tax-cuts-and-slash-red-tape-will-likely-spur-economic-growth-but-theres-a-cost-242733",
+      "url_verified": true,
       "category": "politics",
       "sub_category": "us_federal",
       "description": "Trump claims his tax cuts will boost economic growth and create jobs",
@@ -106,13 +209,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Should show 'Trump' or 'the president' as claim holder. Counter should cite tax policy economics research.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "Extending Trump’s tax cuts and further deregulating the economy will likely spur economic growth but will increase the national debt.",
+        "topic": "economics",
+        "secondary_topic": "finance",
+        "research_query": "tax cuts economic growth productivity national debt fiscal policy",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "United States"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "us-pol-002",
-      "url": "https://www.washingtonpost.com/politics/2026/06/19/senate-healthcare-bill-debate/",
-      "url_verified": false,
+      "url": "https://www.npr.org/2025/12/11/g-s1-101655/senate-aca-premium-vote",
+      "url_verified": true,
       "category": "politics",
       "sub_category": "us_federal",
       "description": "Senate Democrats allege proposed healthcare bill will strip coverage from millions",
@@ -124,13 +248,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Attribution should name Democrats/senators. Should not say 'the article warns'.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "news",
+        "core_claim": "The Senate failed to advance either the Republican or Democratic health care bills, leaving the ACA subsidies at risk of expiring and likely causing premium hikes.",
+        "topic": "health",
+        "secondary_topic": "economics",
+        "research_query": "ACA subsidies expiration 2025 premium increase Republican health savings account bill $1500 Democratic ACA extension vote 51 48",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.9,
+        "claim_type": "empirical",
+        "required_geography": [
+          "United States"
+        ],
+        "claim_holder": "author",
+        "article_stance": "reports",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "PASS"
+      }
     },
     {
       "id": "uk-pol-001",
-      "url": "https://www.theguardian.com/politics/2026/jun/19/uk-chancellor-spending-cuts-public-services",
-      "url_verified": false,
+      "url": "https://theconversation.com/why-rachel-reeves-chose-to-disappoint-voters-with-her-budget-270898",
+      "url_verified": true,
       "category": "politics",
       "sub_category": "uk",
       "description": "UK chancellor announces spending cuts, claiming they will reduce the deficit without hurting services",
@@ -142,13 +287,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Should attribute to chancellor. Counter should cite austerity research.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "Rachel Reeves's budget prioritized winning the support of Labour MPs and the markets over the preferences of the electorate, which may pose a risk to the government's re-election chances",
+        "topic": "economics",
+        "secondary_topic": "politics",
+        "research_query": "fiscal policy tax increases voter response labour government",
+        "expected_response_type": "counter_perspective",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "United Kingdom"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "econ-001",
-      "url": "https://www.abc.net.au/news/2026-06-19/australia-housing-crisis-rental-prices/104000002",
-      "url_verified": false,
+      "url": "https://theconversation.com/most-australians-agree-theres-a-housing-crisis-but-they-differ-on-whats-causing-it-and-how-to-fix-it-267963",
+      "url_verified": true,
       "category": "economics",
       "sub_category": "housing",
       "description": "Analysis finds Australia's housing supply shortage is the primary driver of rent increases",
@@ -160,13 +326,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Journalist's own analysis — no claim holder label. Counter should challenge supply-only framing with demand-side or zoning evidence.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "PASS",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "Most Australians agree that there is a housing crisis, but they differ on the causes and solutions, with younger voters prioritizing rent control and government intervention, while older voters and homeowners emphasize immigration and supply issues",
+        "topic": "economics",
+        "secondary_topic": "politics",
+        "research_query": "housing crisis causes solutions Australia rent control immigration supply",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "Australia"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "PASS",
+        "article_stance": "PASS"
+      }
     },
     {
       "id": "econ-002",
-      "url": "https://www.afr.com/policy/economy/minimum-wage-increase-jobs-2026",
-      "url_verified": false,
+      "url": "https://theconversation.com/resistance-to-raising-the-minimum-wage-reflects-obsolete-thinking-158622",
+      "url_verified": true,
       "category": "economics",
       "sub_category": "wages",
       "description": "Business groups warn that minimum wage increases will lead to job losses in retail and hospitality",
@@ -178,13 +365,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Should attribute to 'business groups'. Counter should cite minimum wage employment research (Card, Krueger etc.).",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "opinion",
+        "core_claim": "Resistance to raising the minimum wage reflects obsolete thinking",
+        "topic": "economics",
+        "secondary_topic": "politics",
+        "research_query": "minimum wage increase economic impact employment rates",
+        "expected_response_type": "counter_perspective",
+        "claim_strength": 0.8,
+        "claim_type": "mixed",
+        "required_geography": [
+          "Australia"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "econ-003",
-      "url": "https://www.smh.com.au/business/the-economy/australia-inflation-falling-2026.html",
-      "url_verified": false,
+      "url": "https://theconversation.com/will-the-australian-dollar-keep-rising-in-2026-3-factors-to-watch-in-the-new-year-271833",
+      "url_verified": true,
       "category": "economics",
       "sub_category": "inflation",
       "description": "Economist predicts Australian inflation will return to target by end of 2026",
@@ -196,13 +404,35 @@
         "result_type": "additional_context"
       },
       "notes": "Expert prediction — should show economist as claim holder. Likely additional_context since predictions are hard to counter directly.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "The Australian dollar is likely to keep rising in 2026 if US monetary policy remains accommodative, the RBA maintains higher rates relative to the US, and iron‑ore prices stay strong.",
+        "topic": "economics",
+        "secondary_topic": "",
+        "research_query": "Australian dollar 2026 forecast US Fed interest rates RBA iron ore",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.6,
+        "claim_type": "empirical",
+        "required_geography": [
+          "Australia",
+          "United States"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "econ-004",
-      "url": "https://www.abc.net.au/news/2026-06-20/negative-gearing-tax-reform-housing/104000003",
-      "url_verified": false,
+      "url": "https://theconversation.com/vital-signs-to-fix-australias-housing-affordability-crisis-negative-gearing-must-go-158518",
+      "url_verified": true,
       "category": "economics",
       "sub_category": "tax",
       "description": "Analysis argues removing negative gearing would make housing more affordable for first home buyers",
@@ -214,13 +444,34 @@
         "result_type": "counter_perspective"
       },
       "notes": "Author's own analytical thesis. Counter should cite negative gearing economics research on price effects.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "PASS",
+      "actual": {
+        "analyzable": true,
+        "article_type": "opinion",
+        "core_claim": "To fix Australia’s housing affordability crisis, negative gearing must be phased out",
+        "topic": "economics",
+        "secondary_topic": "finance",
+        "research_query": "negative gearing housing affordability economic policy australia",
+        "expected_response_type": "counter_perspective",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "Australia"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "PASS",
+        "article_stance": "PASS"
+      }
     },
     {
       "id": "econ-005",
-      "url": "https://www.theguardian.com/australia-news/2026/jun/20/free-trade-agreement-jobs-australia",
-      "url_verified": false,
+      "url": "https://theconversation.com/antipathy-no-more-diplomacy-wins-out-as-australia-and-the-eu-sign-a-free-trade-agreement-279091",
+      "url_verified": true,
       "category": "economics",
       "sub_category": "trade",
       "description": "Government claims new free trade agreement will create 50,000 Australian jobs",
@@ -232,13 +483,35 @@
         "result_type": "counter_perspective"
       },
       "notes": "Government claim — should show attribution. Counter should cite trade agreement employment research.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "Australia and the European Union have signed a Free Trade Agreement after many years of negotiations and stalled talks",
+        "topic": "economics",
+        "secondary_topic": "politics",
+        "research_query": "Australia EU free trade agreement economic impact",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "Australia",
+          "European Union"
+        ],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "sci-001",
-      "url": "https://www.theguardian.com/environment/2026/jun/19/climate-tipping-points-irreversible",
-      "url_verified": false,
+      "url": "https://theconversation.com/climate-tipping-points-are-close-scientists-urge-radical-action-before-its-too-late-268931",
+      "url_verified": true,
       "category": "science",
       "sub_category": "climate",
       "description": "Scientists warn that climate tipping points may be closer than previously thought and could trigger irreversible change",
@@ -250,13 +523,32 @@
         "result_type": "additional_context"
       },
       "notes": "Scientific warning — should attribute to scientists/researchers. Likely additional_context since this is contested science.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "PASS",
+      "actual": {
+        "analyzable": true,
+        "article_type": "news",
+        "core_claim": "Scientists urge radical action to address climate tipping points, which are close and could cause catastrophic harm unless humanity takes urgent action",
+        "topic": "environment",
+        "secondary_topic": "science",
+        "research_query": "climate tipping points global warming radical action greenhouse gas emissions",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [],
+        "claim_holder": "quoted_source",
+        "article_stance": "reports",
+        "attribution": "scientists"
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "PASS",
+        "article_stance": "PASS"
+      }
     },
     {
       "id": "sci-002",
-      "url": "https://www.bbc.com/news/science-environment-2026-ai-energy-consumption",
-      "url_verified": false,
+      "url": "https://time.com/6987773/ai-data-centers-energy-usage-climate-change/",
+      "url_verified": true,
       "category": "science",
       "sub_category": "ai",
       "description": "Study finds AI data centres are consuming exponentially more energy, threatening climate goals",
@@ -268,13 +560,32 @@
         "result_type": "counter_perspective"
       },
       "notes": "Journalist's own analysis framing a study. Counter should challenge the exponential growth assumption or cite efficiency gains.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "PASS",
+      "actual": {
+        "analyzable": true,
+        "article_type": "news",
+        "core_claim": "AI is driving a surge in data center energy demand that threatens climate goals.",
+        "topic": "environment",
+        "secondary_topic": "technology",
+        "research_query": "AI data center electricity demand forecast IEA 2026 climate impact",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "PASS",
+        "article_stance": "PASS"
+      }
     },
     {
       "id": "sci-003",
-      "url": "https://www.nytimes.com/2026/06/19/health/ultra-processed-food-cancer-risk.html",
-      "url_verified": false,
+      "url": "https://www.nbcnews.com/health/cancer/ultra-processed-foods-linked-increased-risk-precancerous-polyps-study-rcna243574",
+      "url_verified": true,
       "category": "science",
       "sub_category": "health",
       "description": "New study links ultra-processed food consumption to increased cancer risk",
@@ -286,13 +597,34 @@
         "result_type": "additional_context"
       },
       "notes": "Single study framed as definitive. Should get additional_context (not counter) noting observational study limitations. Max 2 sentences if 1 source.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "news",
+        "core_claim": "Eating more ultra-processed foods is tied to an increased risk of precancerous colorectal growths in women under 50, according to a study published in JAMA Oncology",
+        "topic": "health",
+        "secondary_topic": "science",
+        "research_query": "ultra-processed foods colorectal cancer risk precancerous polyps adenomas",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [
+          "United States"
+        ],
+        "claim_holder": "quoted_source",
+        "article_stance": "reports",
+        "attribution": "Dr. Andrew Chan and researchers at Massachusetts General Brigham"
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "sci-004",
-      "url": "https://www.theguardian.com/science/2026/jun/20/intermittent-fasting-weight-loss-study",
-      "url_verified": false,
+      "url": "https://theconversation.com/intermittent-fasting-doesnt-have-an-edge-for-weight-loss-but-might-still-work-for-some-276057",
+      "url_verified": true,
       "category": "science",
       "sub_category": "health",
       "description": "Study claims intermittent fasting is more effective than calorie restriction for long-term weight loss",
@@ -304,13 +636,32 @@
         "result_type": "counter_perspective"
       },
       "notes": "Should counter with evidence that adherence, not method, drives weight loss outcomes.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "PASS",
+      "actual": {
+        "analyzable": true,
+        "article_type": "news",
+        "core_claim": "Intermittent fasting is no more effective for weight loss than receiving traditional dietary advice or doing nothing at all, but may still work for some people",
+        "topic": "health",
+        "secondary_topic": "",
+        "research_query": "intermittent fasting weight loss effectiveness nutrition",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "PASS",
+        "article_stance": "PASS"
+      }
     },
     {
       "id": "sci-005",
-      "url": "https://www.bbc.com/news/health-2026-vaccine-hesitancy-measles",
-      "url_verified": false,
+      "url": "https://historyofvaccines.org/blog/return-measles-global-health-crisis-unfolding-2025/",
+      "url_verified": true,
       "category": "science",
       "sub_category": "health",
       "description": "Health officials warn measles outbreaks are rising due to vaccine hesitancy",
@@ -322,13 +673,32 @@
         "result_type": "additional_context"
       },
       "notes": "Official warning — should attribute to health officials. Hard to counter (well-established). Should return additional_context not counter_perspective.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "analysis",
+        "core_claim": "Measles is experiencing a global resurgence in 2025 because COVID‑19 disruptions, vaccine hesitancy, conflict and travel have lowered immunization rates, making vaccination campaigns essential to prevent further outbreaks.",
+        "topic": "health",
+        "secondary_topic": "policy",
+        "research_query": "measles resurgence 2025 vaccination coverage COVID-19 disruption vaccine hesitancy",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "empirical",
+        "required_geography": [],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "opinion-001",
-      "url": "https://www.abc.net.au/religion/ai-is-threatening-human-dignity/104000004",
-      "url_verified": false,
+      "url": "https://theconversation.com/ai-needs-to-be-disarmed-pope-leo-sees-threat-to-humanity-in-technological-arms-race-283432",
+      "url_verified": true,
       "category": "opinion",
       "sub_category": "normative",
       "description": "Opinion: AI systems are fundamentally incompatible with human dignity and must be resisted",
@@ -340,13 +710,32 @@
         "result_type": "additional_context"
       },
       "notes": "Pure normative claim — must route to additional_context only, never counter_perspective. Should explain the human dignity debate, not cite an AI study.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "FAIL",
+      "actual": {
+        "analyzable": true,
+        "article_type": "news",
+        "core_claim": "Pope Leo XIV alleges that artificial intelligence needs to be disarmed to prevent it from dominating humanity",
+        "topic": "technology",
+        "secondary_topic": "politics",
+        "research_query": "AI ethics artificial intelligence governance technological disarmament",
+        "expected_response_type": "counter_perspective",
+        "claim_strength": 0.8,
+        "claim_type": "normative",
+        "required_geography": [],
+        "claim_holder": "quoted_source",
+        "article_stance": "reports",
+        "attribution": "Pope Leo XIV"
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "FAIL",
+        "article_stance": "FAIL"
+      }
     },
     {
       "id": "opinion-002",
-      "url": "https://www.abc.net.au/religion/euthanasia-is-a-moral-wrong/104000005",
-      "url_verified": false,
+      "url": "https://theconversation.com/when-it-comes-to-euthanasia-not-all-slippery-slope-arguments-are-bullshit-76160",
+      "url_verified": true,
       "category": "opinion",
       "sub_category": "normative",
       "description": "Opinion: Euthanasia is morally wrong and represents a dangerous slippery slope",
@@ -358,13 +747,32 @@
         "result_type": "additional_context"
       },
       "notes": "Moral claim — normative routing only. Should explain the philosophical debate around autonomy and sanctity of life.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "PASS",
+      "actual": {
+        "analyzable": true,
+        "article_type": "opinion",
+        "core_claim": "Not all slippery slope arguments against euthanasia are invalid, and some are supported by empirical evidence of a causal relationship between the legalisation of assisted dying and an increase in euthanasia rates",
+        "topic": "health",
+        "secondary_topic": "law",
+        "research_query": "euthanasia slippery slope arguments empirical evidence assisted dying legislation",
+        "expected_response_type": "additional_context",
+        "claim_strength": 0.8,
+        "claim_type": "mixed",
+        "required_geography": [],
+        "claim_holder": "author",
+        "article_stance": "endorses",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "PASS",
+        "article_stance": "PASS"
+      }
     },
     {
       "id": "opinion-003",
-      "url": "https://www.theguardian.com/commentisfree/2026/jun/19/social-media-is-destroying-democracy",
-      "url_verified": false,
+      "url": "https://theconversation.com/social-media-can-support-or-undermine-democracy-it-comes-down-to-how-its-designed-257103",
+      "url_verified": true,
       "category": "opinion",
       "sub_category": "mixed",
       "description": "Opinion columnist argues social media is destroying democracy because it spreads misinformation",
@@ -376,13 +784,13 @@
         "result_type": "counter_perspective"
       },
       "notes": "Mixed — normative thesis (destroying democracy) with empirical premise (spreads misinformation). Should get two-panel mixed result.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     },
     {
       "id": "opinion-004",
-      "url": "https://www.theguardian.com/commentisfree/2026/jun/20/nuclear-power-climate-solution",
-      "url_verified": false,
+      "url": "https://theconversation.com/nuclear-power-makes-no-sense-for-australia-but-its-a-useful-diversion-from-real-climate-action-226838",
+      "url_verified": true,
       "category": "opinion",
       "sub_category": "empirical_opinion",
       "description": "Opinion: Nuclear power is the only realistic solution to climate change",
@@ -394,13 +802,13 @@
         "result_type": "counter_perspective"
       },
       "notes": "Opinion with empirical claim — should still get counter_perspective since the claim is testable. Counter should cite renewable cost/scalability research.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     },
     {
       "id": "opinion-005",
-      "url": "https://www.smh.com.au/opinion/australia-needs-to-raise-the-gst-2026.html",
-      "url_verified": false,
+      "url": "https://theconversation.com/we-can-talk-about-a-higher-rate-of-gst-in-australia-but-it-will-never-happen-212380",
+      "url_verified": true,
       "category": "opinion",
       "sub_category": "empirical_opinion",
       "description": "Columnist argues Australia must raise the GST to fund essential services",
@@ -412,13 +820,13 @@
         "result_type": "counter_perspective"
       },
       "notes": "Policy opinion with empirical premise — should counter with tax efficiency/distributional research.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     },
     {
       "id": "opinion-006",
-      "url": "https://www.afr.com/opinion/capitalism-is-failing-2026",
-      "url_verified": false,
+      "url": "https://theconversation.com/the-end-of-capitalism-or-the-end-of-civilisation-the-choice-could-be-that-stark-250922",
+      "url_verified": true,
       "category": "opinion",
       "sub_category": "normative",
       "description": "Opinion: Capitalism is a fundamentally broken system that must be replaced",
@@ -430,13 +838,13 @@
         "result_type": "additional_context"
       },
       "notes": "Broad normative claim — should route to additional_context explaining the debate, not pick a side.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     },
     {
       "id": "none-001",
-      "url": "https://www.taste.com.au/recipes/chocolate-lava-cake/",
-      "url_verified": false,
+      "url": "https://www.tasteofhome.com/recipes/lava-chocolate-cakes/",
+      "url_verified": true,
       "category": "should_return_none",
       "sub_category": "recipe",
       "description": "Chocolate lava cake recipe",
@@ -448,13 +856,13 @@
         "result_type": "none"
       },
       "notes": "Should return analyzable:false immediately. No dot in the toolbar.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     },
     {
       "id": "none-002",
-      "url": "https://www.lonelyplanet.com/articles/best-things-to-do-in-japan",
-      "url_verified": false,
+      "url": "https://www.lonelyplanet.com/articles/top-things-to-do-in-japan",
+      "url_verified": true,
       "category": "should_return_none",
       "sub_category": "travel",
       "description": "Travel listicle: best things to do in Japan",
@@ -466,13 +874,32 @@
         "result_type": "none"
       },
       "notes": "Listicle — no contestable claim. Should return analyzable:false.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "PASS",
+      "actual": {
+        "analyzable": false,
+        "article_type": "other",
+        "core_claim": "",
+        "topic": "",
+        "secondary_topic": "",
+        "research_query": "",
+        "expected_response_type": "none",
+        "claim_strength": 0,
+        "claim_type": "empirical",
+        "required_geography": [],
+        "claim_holder": "unclear",
+        "article_stance": "unclear",
+        "attribution": ""
+      },
+      "checks": {
+        "analyzable": "PASS",
+        "claim_holder": "PASS",
+        "article_stance": "PASS"
+      }
     },
     {
       "id": "none-003",
-      "url": "https://www.smh.com.au/entertainment/celebrity/taylor-swift-tour-australia-2026.html",
-      "url_verified": false,
+      "url": "https://www.usanewsindependent.com/entertainment/taylor-swift-new-album-2026-world-tour-8096/",
+      "url_verified": true,
       "category": "should_return_none",
       "sub_category": "celebrity",
       "description": "Celebrity tour announcement — Taylor Swift announces Australian dates",
@@ -484,13 +911,13 @@
         "result_type": "none"
       },
       "notes": "Celebrity/entertainment — no contestable thesis. Should return analyzable:false.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     },
     {
       "id": "none-004",
-      "url": "https://www.abc.net.au/news/2026-06-20/world-cup-match-report-australia/104000006",
-      "url_verified": false,
+      "url": "https://www.vavel.com/en-us/soccer/2025/10/01/1235868-argentina-vs-australia-live-updates-in-u-20-world-cup.html",
+      "url_verified": true,
       "category": "should_return_none",
       "sub_category": "sport_event",
       "description": "Match report: Australia vs Argentina World Cup game recap",
@@ -502,13 +929,13 @@
         "result_type": "none"
       },
       "notes": "Pure event report — no contestable claim. Should return analyzable:false.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     },
     {
       "id": "none-005",
-      "url": "https://www.theguardian.com/lifeandstyle/2026/jun/19/how-to-sleep-better-tips",
-      "url_verified": false,
+      "url": "https://www.healthline.com/nutrition/17-tips-to-sleep-better",
+      "url_verified": true,
       "category": "should_return_none",
       "sub_category": "lifestyle",
       "description": "How-to article: tips for better sleep",
@@ -520,13 +947,13 @@
         "result_type": "none"
       },
       "notes": "How-to/listicle — should return analyzable:false.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     },
     {
       "id": "none-006",
-      "url": "https://www.abc.net.au/news/2026-06-20/sydney-floods-emergency-update/104000007",
-      "url_verified": false,
+      "url": "https://www.groundreport.in/latest/australia-floods-2025-nsw-rains-deaths-9301638/",
+      "url_verified": true,
       "category": "should_return_none",
       "sub_category": "breaking_news",
       "description": "Breaking news: emergency flood update for Sydney, evacuation orders issued",
@@ -538,8 +965,8 @@
         "result_type": "none"
       },
       "notes": "Pure event report with no contestable thesis — should return analyzable:false.",
-      "status": "SKIP",
-      "reason": "url_verified:false"
+      "status": "ERROR",
+      "error": "Worker 429"
     }
   ]
 }
