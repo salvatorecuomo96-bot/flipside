@@ -1,0 +1,482 @@
+[
+  {
+    "id": "aus-pol-001",
+    "url": "https://www.abc.net.au/news/2026-06-19/labor-housing-policy-announcement/104000000",
+    "url_verified": false,
+    "category": "politics",
+    "sub_category": "australian_federal",
+    "description": "Labor minister announces new housing policy, claiming it will reduce rents",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Should show minister name in claims, not 'the article argues'. Counter should cite housing economics research."
+  },
+  {
+    "id": "aus-pol-002",
+    "url": "https://www.smh.com.au/politics/federal/opposition-leader-slams-budget-2026.html",
+    "url_verified": false,
+    "category": "politics",
+    "sub_category": "australian_federal",
+    "description": "Opposition leader attacks government budget, alleging it will increase cost of living",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Classic quoted_source case. Panel must not say 'the article argues the budget increases cost of living'."
+  },
+  {
+    "id": "aus-pol-003",
+    "url": "https://www.theguardian.com/australia-news/2026/jun/19/greens-climate-policy-coal",
+    "url_verified": false,
+    "category": "politics",
+    "sub_category": "australian_federal",
+    "description": "Greens senator warns that coal subsidies are delaying climate action",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Should attribute to 'the Greens' or senator name, not the article. Counter should cite subsidy economics."
+  },
+  {
+    "id": "aus-pol-004",
+    "url": "https://www.abc.net.au/news/2026-06-20/rba-interest-rate-decision-inflation/104000001",
+    "url_verified": false,
+    "category": "politics",
+    "sub_category": "australian_economy",
+    "description": "RBA governor warns inflation remains persistent and further rate rises may be needed",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Expert warning — should show 'RBA governor' as claim holder. Counter should cite inflation research."
+  },
+  {
+    "id": "aus-pol-005",
+    "url": "https://www.smh.com.au/national/australia-immigration-levels-debate-2026.html",
+    "url_verified": false,
+    "category": "politics",
+    "sub_category": "australian_federal",
+    "description": "Two parties present opposing views on immigration levels — article reports both without adopting one",
+    "expected": {
+      "analyzable": false,
+      "claim_holder": "multiple_sources",
+      "article_stance": "contrasts",
+      "claim_type": "empirical",
+      "result_type": "none"
+    },
+    "notes": "Reported dispute — should return straight_reporting silence. Must not fabricate a single thesis."
+  },
+  {
+    "id": "us-pol-001",
+    "url": "https://www.nytimes.com/2026/06/19/us/politics/trump-tax-cuts-economy.html",
+    "url_verified": false,
+    "category": "politics",
+    "sub_category": "us_federal",
+    "description": "Trump claims his tax cuts will boost economic growth and create jobs",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Should show 'Trump' or 'the president' as claim holder. Counter should cite tax policy economics research."
+  },
+  {
+    "id": "us-pol-002",
+    "url": "https://www.washingtonpost.com/politics/2026/06/19/senate-healthcare-bill-debate/",
+    "url_verified": false,
+    "category": "politics",
+    "sub_category": "us_federal",
+    "description": "Senate Democrats allege proposed healthcare bill will strip coverage from millions",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Attribution should name Democrats/senators. Should not say 'the article warns'."
+  },
+  {
+    "id": "uk-pol-001",
+    "url": "https://www.theguardian.com/politics/2026/jun/19/uk-chancellor-spending-cuts-public-services",
+    "url_verified": false,
+    "category": "politics",
+    "sub_category": "uk",
+    "description": "UK chancellor announces spending cuts, claiming they will reduce the deficit without hurting services",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Should attribute to chancellor. Counter should cite austerity research."
+  },
+  {
+    "id": "econ-001",
+    "url": "https://www.abc.net.au/news/2026-06-19/australia-housing-crisis-rental-prices/104000002",
+    "url_verified": false,
+    "category": "economics",
+    "sub_category": "housing",
+    "description": "Analysis finds Australia's housing supply shortage is the primary driver of rent increases",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Journalist's own analysis — no claim holder label. Counter should challenge supply-only framing with demand-side or zoning evidence."
+  },
+  {
+    "id": "econ-002",
+    "url": "https://www.afr.com/policy/economy/minimum-wage-increase-jobs-2026",
+    "url_verified": false,
+    "category": "economics",
+    "sub_category": "wages",
+    "description": "Business groups warn that minimum wage increases will lead to job losses in retail and hospitality",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Should attribute to 'business groups'. Counter should cite minimum wage employment research (Card, Krueger etc.)."
+  },
+  {
+    "id": "econ-003",
+    "url": "https://www.smh.com.au/business/the-economy/australia-inflation-falling-2026.html",
+    "url_verified": false,
+    "category": "economics",
+    "sub_category": "inflation",
+    "description": "Economist predicts Australian inflation will return to target by end of 2026",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "additional_context"
+    },
+    "notes": "Expert prediction — should show economist as claim holder. Likely additional_context since predictions are hard to counter directly."
+  },
+  {
+    "id": "econ-004",
+    "url": "https://www.abc.net.au/news/2026-06-20/negative-gearing-tax-reform-housing/104000003",
+    "url_verified": false,
+    "category": "economics",
+    "sub_category": "tax",
+    "description": "Analysis argues removing negative gearing would make housing more affordable for first home buyers",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Author's own analytical thesis. Counter should cite negative gearing economics research on price effects."
+  },
+  {
+    "id": "econ-005",
+    "url": "https://www.theguardian.com/australia-news/2026/jun/20/free-trade-agreement-jobs-australia",
+    "url_verified": false,
+    "category": "economics",
+    "sub_category": "trade",
+    "description": "Government claims new free trade agreement will create 50,000 Australian jobs",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Government claim — should show attribution. Counter should cite trade agreement employment research."
+  },
+  {
+    "id": "sci-001",
+    "url": "https://www.theguardian.com/environment/2026/jun/19/climate-tipping-points-irreversible",
+    "url_verified": false,
+    "category": "science",
+    "sub_category": "climate",
+    "description": "Scientists warn that climate tipping points may be closer than previously thought and could trigger irreversible change",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "additional_context"
+    },
+    "notes": "Scientific warning — should attribute to scientists/researchers. Likely additional_context since this is contested science."
+  },
+  {
+    "id": "sci-002",
+    "url": "https://www.bbc.com/news/science-environment-2026-ai-energy-consumption",
+    "url_verified": false,
+    "category": "science",
+    "sub_category": "ai",
+    "description": "Study finds AI data centres are consuming exponentially more energy, threatening climate goals",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Journalist's own analysis framing a study. Counter should challenge the exponential growth assumption or cite efficiency gains."
+  },
+  {
+    "id": "sci-003",
+    "url": "https://www.nytimes.com/2026/06/19/health/ultra-processed-food-cancer-risk.html",
+    "url_verified": false,
+    "category": "science",
+    "sub_category": "health",
+    "description": "New study links ultra-processed food consumption to increased cancer risk",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "empirical",
+      "result_type": "additional_context"
+    },
+    "notes": "Single study framed as definitive. Should get additional_context (not counter) noting observational study limitations. Max 2 sentences if 1 source."
+  },
+  {
+    "id": "sci-004",
+    "url": "https://www.theguardian.com/science/2026/jun/20/intermittent-fasting-weight-loss-study",
+    "url_verified": false,
+    "category": "science",
+    "sub_category": "health",
+    "description": "Study claims intermittent fasting is more effective than calorie restriction for long-term weight loss",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Should counter with evidence that adherence, not method, drives weight loss outcomes."
+  },
+  {
+    "id": "sci-005",
+    "url": "https://www.bbc.com/news/health-2026-vaccine-hesitancy-measles",
+    "url_verified": false,
+    "category": "science",
+    "sub_category": "health",
+    "description": "Health officials warn measles outbreaks are rising due to vaccine hesitancy",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "quoted_source",
+      "article_stance": "reports",
+      "claim_type": "empirical",
+      "result_type": "additional_context"
+    },
+    "notes": "Official warning — should attribute to health officials. Hard to counter (well-established). Should return additional_context not counter_perspective."
+  },
+  {
+    "id": "opinion-001",
+    "url": "https://www.abc.net.au/religion/ai-is-threatening-human-dignity/104000004",
+    "url_verified": false,
+    "category": "opinion",
+    "sub_category": "normative",
+    "description": "Opinion: AI systems are fundamentally incompatible with human dignity and must be resisted",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "normative",
+      "result_type": "additional_context"
+    },
+    "notes": "Pure normative claim — must route to additional_context only, never counter_perspective. Should explain the human dignity debate, not cite an AI study."
+  },
+  {
+    "id": "opinion-002",
+    "url": "https://www.abc.net.au/religion/euthanasia-is-a-moral-wrong/104000005",
+    "url_verified": false,
+    "category": "opinion",
+    "sub_category": "normative",
+    "description": "Opinion: Euthanasia is morally wrong and represents a dangerous slippery slope",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "normative",
+      "result_type": "additional_context"
+    },
+    "notes": "Moral claim — normative routing only. Should explain the philosophical debate around autonomy and sanctity of life."
+  },
+  {
+    "id": "opinion-003",
+    "url": "https://www.theguardian.com/commentisfree/2026/jun/19/social-media-is-destroying-democracy",
+    "url_verified": false,
+    "category": "opinion",
+    "sub_category": "mixed",
+    "description": "Opinion columnist argues social media is destroying democracy because it spreads misinformation",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "mixed",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Mixed — normative thesis (destroying democracy) with empirical premise (spreads misinformation). Should get two-panel mixed result."
+  },
+  {
+    "id": "opinion-004",
+    "url": "https://www.theguardian.com/commentisfree/2026/jun/20/nuclear-power-climate-solution",
+    "url_verified": false,
+    "category": "opinion",
+    "sub_category": "empirical_opinion",
+    "description": "Opinion: Nuclear power is the only realistic solution to climate change",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Opinion with empirical claim — should still get counter_perspective since the claim is testable. Counter should cite renewable cost/scalability research."
+  },
+  {
+    "id": "opinion-005",
+    "url": "https://www.smh.com.au/opinion/australia-needs-to-raise-the-gst-2026.html",
+    "url_verified": false,
+    "category": "opinion",
+    "sub_category": "empirical_opinion",
+    "description": "Columnist argues Australia must raise the GST to fund essential services",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "empirical",
+      "result_type": "counter_perspective"
+    },
+    "notes": "Policy opinion with empirical premise — should counter with tax efficiency/distributional research."
+  },
+  {
+    "id": "opinion-006",
+    "url": "https://www.afr.com/opinion/capitalism-is-failing-2026",
+    "url_verified": false,
+    "category": "opinion",
+    "sub_category": "normative",
+    "description": "Opinion: Capitalism is a fundamentally broken system that must be replaced",
+    "expected": {
+      "analyzable": true,
+      "claim_holder": "author",
+      "article_stance": "endorses",
+      "claim_type": "normative",
+      "result_type": "additional_context"
+    },
+    "notes": "Broad normative claim — should route to additional_context explaining the debate, not pick a side."
+  },
+  {
+    "id": "none-001",
+    "url": "https://www.taste.com.au/recipes/chocolate-lava-cake/",
+    "url_verified": false,
+    "category": "should_return_none",
+    "sub_category": "recipe",
+    "description": "Chocolate lava cake recipe",
+    "expected": {
+      "analyzable": false,
+      "claim_holder": "unclear",
+      "article_stance": "unclear",
+      "claim_type": "empirical",
+      "result_type": "none"
+    },
+    "notes": "Should return analyzable:false immediately. No dot in the toolbar."
+  },
+  {
+    "id": "none-002",
+    "url": "https://www.lonelyplanet.com/articles/best-things-to-do-in-japan",
+    "url_verified": false,
+    "category": "should_return_none",
+    "sub_category": "travel",
+    "description": "Travel listicle: best things to do in Japan",
+    "expected": {
+      "analyzable": false,
+      "claim_holder": "unclear",
+      "article_stance": "unclear",
+      "claim_type": "empirical",
+      "result_type": "none"
+    },
+    "notes": "Listicle — no contestable claim. Should return analyzable:false."
+  },
+  {
+    "id": "none-003",
+    "url": "https://www.smh.com.au/entertainment/celebrity/taylor-swift-tour-australia-2026.html",
+    "url_verified": false,
+    "category": "should_return_none",
+    "sub_category": "celebrity",
+    "description": "Celebrity tour announcement — Taylor Swift announces Australian dates",
+    "expected": {
+      "analyzable": false,
+      "claim_holder": "unclear",
+      "article_stance": "unclear",
+      "claim_type": "empirical",
+      "result_type": "none"
+    },
+    "notes": "Celebrity/entertainment — no contestable thesis. Should return analyzable:false."
+  },
+  {
+    "id": "none-004",
+    "url": "https://www.abc.net.au/news/2026-06-20/world-cup-match-report-australia/104000006",
+    "url_verified": false,
+    "category": "should_return_none",
+    "sub_category": "sport_event",
+    "description": "Match report: Australia vs Argentina World Cup game recap",
+    "expected": {
+      "analyzable": false,
+      "claim_holder": "unclear",
+      "article_stance": "unclear",
+      "claim_type": "empirical",
+      "result_type": "none"
+    },
+    "notes": "Pure event report — no contestable claim. Should return analyzable:false."
+  },
+  {
+    "id": "none-005",
+    "url": "https://www.theguardian.com/lifeandstyle/2026/jun/19/how-to-sleep-better-tips",
+    "url_verified": false,
+    "category": "should_return_none",
+    "sub_category": "lifestyle",
+    "description": "How-to article: tips for better sleep",
+    "expected": {
+      "analyzable": false,
+      "claim_holder": "unclear",
+      "article_stance": "unclear",
+      "claim_type": "empirical",
+      "result_type": "none"
+    },
+    "notes": "How-to/listicle — should return analyzable:false."
+  },
+  {
+    "id": "none-006",
+    "url": "https://www.abc.net.au/news/2026-06-20/sydney-floods-emergency-update/104000007",
+    "url_verified": false,
+    "category": "should_return_none",
+    "sub_category": "breaking_news",
+    "description": "Breaking news: emergency flood update for Sydney, evacuation orders issued",
+    "expected": {
+      "analyzable": false,
+      "claim_holder": "unclear",
+      "article_stance": "unclear",
+      "claim_type": "empirical",
+      "result_type": "none"
+    },
+    "notes": "Pure event report with no contestable thesis — should return analyzable:false."
+  }
+]
