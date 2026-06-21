@@ -77,7 +77,10 @@ export async function fetchSources(query, topic = "", articleUrl = "", secondary
   // De-dupe by URL, drop self-links, collect candidates.
   // Also drop news items whose title closely matches the article title — catches
   // self-links that arrive via Google News redirect URLs (domain != articleDomain).
+  // Non-news sources with zero query-term overlap in title+evidence are dropped
+  // entirely — they can never be cited as evidence and pollute Further Reading.
   const articleTitleTokens = new Set(tokenize(wikiQ)); // wikiQ = articleTitle when available
+  const qTokenSet = new Set(tokenize(q));
   const seen = new Set();
   const candidates = [];
   for (const s of ranked) {
@@ -90,6 +93,16 @@ export async function fetchSources(query, topic = "", articleUrl = "", secondary
       let overlap = 0;
       for (const t of articleTitleTokens) if (srcTokens.has(t)) overlap++;
       if (overlap / articleTitleTokens.size > 0.5) continue; // >50% title match → self-link
+    }
+    // Drop academic/government/legal/preprint sources with zero query coverage —
+    // these are off-topic OpenAlex results that would only pollute Further Reading.
+    // News/reference sources are exempt: news has no abstract to score, reference
+    // has its own gate in fetchWikipedia.
+    if (s.kind !== "news" && s.kind !== "reference" && qTokenSet.size > 0) {
+      const docTokens = new Set(tokenize((s.title || "") + " " + (s.evidence_text || "")));
+      let hasOverlap = false;
+      for (const t of qTokenSet) { if (docTokens.has(t)) { hasOverlap = true; break; } }
+      if (!hasOverlap) continue;
     }
     seen.add(key);
     candidates.push(s);
