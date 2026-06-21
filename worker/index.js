@@ -172,6 +172,9 @@ Every sentence must be directly supportable by a named cited source. Longer is n
 ═══ PROVENANCE ═══
 For each source you cite: give its exact id, the sentence in your summary it supports, and an EXACT VERBATIM QUOTE of at least 8 words and at least 35 characters from that source's evidence_text. Do not paraphrase. Do not shorten a quote below 8 words. This is checked against the source text — a quote not found verbatim in the evidence is rejected. If you cannot produce a qualifying real quote, do not cite the source.
 
+═══ INLINE CITATIONS ═══
+Inside the "summary" text, append the supporting source's bracketed id immediately after each sentence it backs — reuse the EXACT bracketed id shown for that source in the EVIDENCE list (e.g. "Real wages actually rose over the same period [K7H2QX]."). Use ONLY ids that also appear in used_sources. If two sources back one sentence, append both: "…[K7H2QX][9QF2BR]." Do not invent your own numbers and do not write "[1]"; always use the bracketed id token. Framing or transition sentences need no marker. The marker goes before the sentence's final period.
+
 ═══ OUTPUT (JSON only, nothing else) ═══
 If result exists (empirical or normative claim):
 {"result_type":"counter_perspective|additional_context","headline":"<≤9-word title>","summary":"<2 sentences if 1 source, up to 4 if 2 sources, up to 6 if 3+ — must name the article's specific implied conclusion and argue directly against it>","core_claims":["<article's load-bearing claims, 1–3 items>"],"confidence":<0.0-1.0>,"used_sources":[{"id":"<evidence id>","supports_sentence":"<the sentence it backs>","evidence_quote":"<verbatim phrase from that evidence_text>"}]}
@@ -322,7 +325,7 @@ async function generate(env, messages) {
 // --- KV cache ----------------------------------------------------------------
 const CACHE_TTL = 6 * 60 * 60;
 const CACHE_KEY_VERSION_LEGACY = "v14"; // URL-keyed — old clients without citation_schema
-const CACHE_KEY_VERSION_STABLE = "v18"; // content-keyed — clients sending citation_schema:"stable-v1"
+const CACHE_KEY_VERSION_STABLE = "v19"; // content-keyed — clients sending citation_schema:"stable-v1"
 
 // djb2 hash over a multi-part key string
 function djb2(str) {

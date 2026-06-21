@@ -13,6 +13,7 @@ import { classify, synthesize } from "../lib/api-client.js";
 import { fetchSources, rankSources } from "../lib/sources.js";
 import { generateCitationToken } from "../lib/evidence-id.js";
 import { buildCitationMap, validateShown, dedupByUrl } from "../lib/citation-resolver.js";
+import { applyInlineCitations } from "../lib/inline-citations.js";
 import {
   classificationSilenceReason, synthesisSilenceReason,
   silenceShowsFurther, silenceExaminedClaim,
@@ -324,8 +325,8 @@ async function handleAnalyze(payload, onStage = null) {
         .filter((s) => EMPIRICAL_KINDS.has(s.kind));
       const ctxShown = validateShown(synth.additional_context.used_sources, byCitationId)
         .filter((s) => s.kind === "reference");
-      const empSummary = empShown.length ? synth.empirical_counter.summary : "";
-      const ctxSummary = ctxShown.length ? synth.additional_context.summary : "";
+      const empSummary = empShown.length ? applyInlineCitations(synth.empirical_counter.summary, empShown) : "";
+      const ctxSummary = ctxShown.length ? applyInlineCitations(synth.additional_context.summary, ctxShown) : "";
       if (!empSummary && !ctxSummary) {
         // Both blocks stripped by the source-kind firewall: the model produced
         // something but all cited sources were wrong-kind. evidence_too_weak is
@@ -354,7 +355,7 @@ async function handleAnalyze(payload, onStage = null) {
       result_type: synth.result_type,
       ...claimAttributionFields(cls),
       headline: synth.headline,
-      summary: synth.summary,
+      summary: applyInlineCitations(synth.summary, shown),
       core_claims: panelClaims(synth.core_claims, cls),
       confidence: calibrateConfidence(synth.confidence, shown),
       sources: shown.map(pickFields),

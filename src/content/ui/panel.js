@@ -108,6 +108,7 @@ export function mountPanel() {
       clearCountdown();
       body.innerHTML = renderResultHtml(data);
       wireFeedback(shadow, url || "");
+      wireCitations(shadow);
       if (data?.result_type === "none" && typeof onRetry === "function") {
         const retryBtn = shadow.querySelector(".ec-retry-btn");
         if (retryBtn) retryBtn.addEventListener("click", onRetry);
@@ -167,7 +168,7 @@ function renderResultHtml(data) {
     <section class="ec-section">
       <p class="ec-label ${labelClass}">${label} ${confChip(data.confidence)}</p>
       ${data.headline ? `<p class="ec-headline">${escapeHtml(data.headline)}</p>` : ""}
-      ${data.summary ? `<p class="ec-perspective">${escapeHtml(data.summary)}</p>` : ""}
+      ${data.summary ? `<p class="ec-perspective">${renderSummaryWithCites(data.summary)}</p>` : ""}
       ${renderSourcesBlock(data.sources)}
       ${renderFurther(data.furtherReading)}
     </section>
@@ -182,14 +183,14 @@ function renderMixedHtml(data) {
   const empHtml = emp.summary
     ? `<section class="ec-section">
          <p class="ec-label ec-label-counter">Empirical counter-evidence ${confChip(emp.confidence)}</p>
-         <p class="ec-perspective">${escapeHtml(emp.summary)}</p>
+         <p class="ec-perspective">${renderSummaryWithCites(emp.summary)}</p>
          ${renderSourcesBlock(emp.sources)}
        </section>`
     : "";
   const ctxHtml = ctx.summary
     ? `<section class="ec-section">
          <p class="ec-label ec-label-context">Additional context</p>
-         <p class="ec-perspective">${escapeHtml(ctx.summary)}</p>
+         <p class="ec-perspective">${renderSummaryWithCites(ctx.summary)}</p>
          ${renderSourcesBlock(ctx.sources)}
        </section>`
     : "";
@@ -299,9 +300,20 @@ function renderSourcesBlock(sources) {
   return `<div class="ec-sources">
        <p class="ec-label">Sources <span class="ec-src-count">${srcs.length}</span></p>
        <ul class="ec-sources-list open">
-         ${srcs.map((s) => `<li>${renderSource(s)}</li>`).join("")}
+         ${srcs.map((s, i) => `<li data-src-index="${i + 1}"><span class="ec-src-num">${i + 1}</span>${renderSource(s)}</li>`).join("")}
        </ul>
      </div>`;
+}
+
+// Renders a result summary, turning the [N] citation markers that the service
+// worker inlined (mapped to the final source order) into clickable superscripts.
+// Cached/legacy summaries without markers render unchanged. The summary is HTML-
+// escaped first; only our own integer-indexed <sup> markup is then injected.
+function renderSummaryWithCites(summary) {
+  if (typeof summary !== "string" || !summary) return "";
+  return escapeHtml(summary).replace(/\[(\d+)\]/g, (_m, n) =>
+    `<sup class="ec-cite" data-cite="${n}" role="button" tabindex="0" title="Jump to source ${n}">${n}</sup>`
+  );
 }
 
 function renderFurther(further) {
@@ -422,6 +434,28 @@ function wireFeedback(shadow, url) {
     chip.addEventListener("click", () => {
       chrome.runtime.sendMessage({ type: "FEEDBACK", url, rating: "down", reason: chip.dataset.reason });
       lockFeedback("down");
+    });
+  });
+}
+
+// Clicking a [N] superscript scrolls to the matching source card and flashes it.
+// Lookup is scoped to the marker's own .ec-section so the two mixed-result blocks
+// (each numbered 1..N independently) never cross-reference each other.
+function wireCitations(shadow) {
+  shadow.querySelectorAll(".ec-cite").forEach((cite) => {
+    const jump = () => {
+      const n = cite.getAttribute("data-cite");
+      const scope = cite.closest(".ec-section") || shadow;
+      const target = scope.querySelector(`li[data-src-index="${n}"]`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      target.classList.remove("ec-src-flash");
+      void target.offsetWidth; // force reflow so the animation can restart
+      target.classList.add("ec-src-flash");
+    };
+    cite.addEventListener("click", jump);
+    cite.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jump(); }
     });
   });
 }
@@ -661,6 +695,36 @@ const TEMPLATE = `
     .ec-sources-list li {
       font-size: 13px;
       line-height: 1.5;
+      border-radius: 6px;
+      transition: background 0.2s ease;
+    }
+    /* numbered badge prefixing each cited source, matches inline [N] markers */
+    .ec-src-num {
+      display: inline-block;
+      min-width: 15px;
+      margin-right: 5px;
+      color: var(--ec-accent);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    /* inline citation superscript in the summary */
+    .ec-cite {
+      cursor: pointer;
+      color: var(--ec-accent);
+      font-weight: 700;
+      font-size: 0.7em;
+      vertical-align: super;
+      line-height: 0;
+      padding: 0 1px;
+      user-select: none;
+    }
+    .ec-cite:hover { text-decoration: underline; }
+    .ec-cite:focus-visible { outline: 2px solid var(--ec-accent); outline-offset: 2px; border-radius: 3px; }
+    /* brief flash when a source is jumped to from a citation */
+    .ec-src-flash { animation: ec-flash 1.3s ease-out; }
+    @keyframes ec-flash {
+      0%   { background: rgba(91, 142, 240, 0.22); }
+      100% { background: transparent; }
     }
     .ec-sources-list a {
       text-decoration: none;

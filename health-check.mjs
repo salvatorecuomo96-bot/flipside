@@ -99,7 +99,7 @@ for (const f of coreFiles) {
 // ── 3. TESTS ────────────────────────────────────────────────────────────────────
 section("3. TESTS — do the unit tests pass?");
 
-const testFiles = ["test/provenance.test.mjs", "test/prompt-sync.test.mjs"];
+const testFiles = ["test/provenance.test.mjs", "test/prompt-sync.test.mjs", "test/inline-citations.test.mjs"];
 for (const t of testFiles) {
   if (!existsSync(t)) { line(false, `${t} — MISSING`); fail("test:" + t); continue; }
   const r = run(`node --test "${t}"`);
@@ -122,12 +122,15 @@ const featureChecks = [
   ["Attribution parsing in classify", "src/lib/api-client.js", ["CLAIM_HOLDERS", "claim_holder", "article_stance"]],
   ["challengeTargetLabel in prompt", "src/lib/prompt.js", ["challengeTargetLabel"]],
   ["challengeTargetLabel mirrored in worker", "worker/index.js", ["challengeTargetLabel"]],
-  ["Worker cache bumped to v18", "worker/index.js", ['CACHE_KEY_VERSION_STABLE', "v18"]],
+  ["Worker cache bumped to v19", "worker/index.js", ['CACHE_KEY_VERSION_STABLE', "v19"]],
   ["Wikipedia entity-title search", "src/lib/sources.js", ["articleTitle", "fetchWikipedia(wikiQ"]],
   ["Wikipedia zero-coverage gate", "src/lib/sources.js", ["zero query-term overlap", "qTokens"]],
   ["Self-link title filter", "src/lib/sources.js", ["self-link", "articleTitleTokens"]],
   ["Politics topic routing", "src/lib/sources.js", ['["politics"].includes(t)']],
   ["Claim-holder pill in panel", "src/content/ui/panel.js", ["renderClaimHolder", "ec-claim-holder"]],
+  ["Inline citations module", "src/lib/inline-citations.js", ["applyInlineCitations"]],
+  ["Inline citations wired in worker", "src/background/service-worker.js", ["applyInlineCitations"]],
+  ["Inline citation markers in panel", "src/content/ui/panel.js", ["renderSummaryWithCites", "ec-cite"]],
 ];
 for (const [label, file, markers] of featureChecks) {
   if (!existsSync(file)) { line(false, `${label} — ${file} MISSING`); fail("feat:" + label); continue; }
